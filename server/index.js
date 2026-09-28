@@ -6,6 +6,8 @@ const db = require('./db');
 const groq = require('./groq');
 const hindsight = require('./hindsight');
 const retainQueue = require('./retain-queue');
+const sessionStore = require('./voice/session-store');
+const { createShutdown } = require('./shutdown');
 
 const PORT = process.env.PORT || 3000;
 // Listen on this machine only by default: the API has no login and reads helper memory.
@@ -14,7 +16,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 
 /** Origin only: drops any path, query or user:password that might be embedded in the URL. */
 function safeOrigin(url) {
-  try { return new URL(url).origin; } catch (e) { return '(invalid URL)'; }
+  try { return new URL(url).origin; } catch { return '(invalid URL)'; }
 }
 
 function banner() {
@@ -32,4 +34,13 @@ function banner() {
 
 const app = createApp({ port: PORT });
 retainQueue.start();
-app.listen(PORT, HOST, banner);
+
+// A call that was live when the server last stopped picks up where it left off.
+const restored = sessionStore.restore();
+if (restored) console.log(`[TrustMemory AI] Restored ${restored} live voice session(s) from the last 30 minutes.`);
+
+const server = app.listen(PORT, HOST, banner);
+
+const shutdown = createShutdown({ server });
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));

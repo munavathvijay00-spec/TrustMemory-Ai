@@ -41,3 +41,24 @@ test('decision: kept and broken promises move churn with named reasons', () => {
   assert.ok(r.reasons.includes('earlier commitment not kept (+6)'));
   assert.equal(r.delta, 0);
 });
+
+test('commitments: a promise gets a check-in date two weeks out and shows up when due', () => {
+  const past = new Date(Date.now() - 20 * 86400000).toISOString().replace('T', ' ').substring(0, 19);
+  const id = commitments.add({ helperId: 'fatima', text: 'Arrive by 9 on weekdays', madeAt: past });
+  const row = db.prepare('SELECT due_date FROM commitments WHERE id = ?').get(id);
+  assert.equal(row.due_date, new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10));
+  const due = commitments.due().find(d => d.id === id);
+  assert.ok(due, 'an open promise past its check-in date is listed as due');
+  assert.equal(due.overdue, true);
+  commitments.resolve(id, 'kept', { evidence: 'on time' });
+  assert.equal(commitments.due().some(d => d.id === id), false, 'resolved promises are no longer due');
+});
+
+test('commitments: a second broken promise within 60 days escalates once to the coordinator', () => {
+  const before = db.prepare("SELECT COUNT(*) AS n FROM activity WHERE text LIKE '%Escalation:%'").get().n;
+  const a = commitments.add({ helperId: 'kavita', text: 'Check in with the household each morning' });
+  commitments.resolve(a, 'broken', { evidence: 'forgot' });
+  assert.ok(commitments.escalations().some(e => e.helper_id === 'kavita' && e.broken >= 2));
+  const after = db.prepare("SELECT COUNT(*) AS n FROM activity WHERE text LIKE '%Escalation:%'").get().n;
+  assert.equal(after, before + 1);
+});

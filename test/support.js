@@ -28,7 +28,7 @@ async function startServer(app) {
         res.on('data', c => { data += c; });
         res.on('end', () => {
           let json = null;
-          try { json = JSON.parse(data); } catch (e) { /* not JSON */ }
+          try { json = JSON.parse(data); } catch { /* not JSON */ }
           resolve({ status: res.statusCode, headers: res.headers, body: json, text: data });
         });
       });

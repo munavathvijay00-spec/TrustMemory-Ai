@@ -104,12 +104,19 @@ Open http://localhost:3000 for the coordinator console. Open the helper's phone 
 
 If better-sqlite3 has no prebuilt binary for your Node version, `server/sqlite-compat.js` falls back to the built-in `node:sqlite` automatically.
 
+A live call survives a server restart: sessions are saved to SQLite on every change and reloaded on boot if touched in the last 30 minutes. Ctrl+C (SIGINT) or SIGTERM stops new connections, waits up to 10 s for call saves and Hindsight retains in flight, and moves any retain still pending to the retry queue before exiting.
+
+**Run with Docker:** `docker build -t trustmemory .` then `docker run -p 3000:3000 --env-file .env trustmemory` and open http://localhost:3000.
+The image uses Node 22 with the built-in `node:sqlite` and listens on `0.0.0.0` inside the container. The database lives in the container at `/app/trustmemory.db`; mount a volume there (or set `TRUSTMEMORY_DB`) to keep it.
+
 ## API
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Liveness, which integrations are configured, DB counts, retains waiting. Never returns secrets. |
 | GET | `/api/helpers`, `/api/households` | Roster with current trust, churn and difficulty |
+| POST | `/api/helpers`, `/api/households` | Register a helper or household (validated); saved in SQLite, profile retained to Hindsight and a standing mental model created |
+| GET | `/api/dashboard` | Every dashboard number from the server: counts, follow-ups due, escalations, alerts |
 | GET | `/api/memories/:helper_id` | Local memory ledger for a helper (World, Experience, Opinion, Observation) |
 | GET | `/api/calls` | Saved calls with transcript and extracted outcome |
 | GET | `/api/memory/commitments?helper=` | Commitment ledger: promises, kept rate, and which coaching approach works with the helper |
@@ -160,8 +167,11 @@ Errors are JSON: `{ "error": "message", "code": "CODE" }` (memory routes return 
 
 ```bash
 npm test                 # node:test, all suites
-npm run test:coverage    # same, with --experimental-test-coverage
+npm run lint             # ESLint 9 (flat config in eslint.config.js), recommended rules
+npm run test:coverage    # same tests; fails if server/ line coverage drops below 75% (currently ~80%)
 ```
+
+Every voice session carries `trace: [{ step, ms, ok, detail }]` (start: `recall`, `mental_model`, `household_recall`, `ledger`, `llm_greeting`; each turn: `turn_recall`, `llm_reply`, `attribution`; completion: `extract`, `save_local`, `decision`, `retain`), exposed on `GET /api/voice/session/:id`, with each turn's and each completion's own entries in their responses. `test/voice-lifecycle.test.js` covers the trace, restoring a persisted session after a restart, and handing pending retains to the queue on shutdown.
 
 Tests never touch the network or your data. `test/support.js` sets `TRUSTMEMORY_DB=':memory:'`, blanks every Groq and Hindsight variable, and replaces `globalThis.fetch`; tests that need Groq or Hindsight install a fetch mock that answers like the real APIs. Covered: the commitment ledger and what-works learning, validation, rate limits, health, JSON errors, the retain retry queue, the Decision Agent, citation handling, and the full call flow end to end (session, ring, incoming, answer, turn, hang-up, complete, a single saved record and one churn update even under parallel completes, 409 after hang-up, ring expiry to `missed`, failed retain landing in the retry queue).
 
@@ -172,7 +182,7 @@ npm run bank:reset           # preview what would be removed
 npm run bank:reset -- --yes  # apply
 ```
 
-CI (`.github/workflows/test.yml`) runs `npm ci --ignore-scripts` and `npm test` on Node 22.x and 24.x for every push and pull request. Skipping install scripts means better-sqlite3 has no native binary, so CI exercises the `node:sqlite` fallback.
+CI (`.github/workflows/test.yml`) runs `npm ci --ignore-scripts`, `npm run lint` and `npm test` on Node 22.x and 24.x for every push and pull request, plus `npm run test:coverage` on 24.x. Skipping install scripts means better-sqlite3 has no native binary, so CI exercises the `node:sqlite` fallback.
 
 ## Known limits
 
@@ -187,8 +197,14 @@ CI (`.github/workflows/test.yml`) runs `npm ci --ignore-scripts` and `npm test` 
 
 ```
 server/                  Express app, agents, Hindsight and Groq clients, SQLite
-  app.js, index.js       app factory and entry point
-  voice-agent.js         Voice Agent            voice-routes.js   its HTTP routes
+  app.js, index.js       app factory and entry point   shutdown.js  graceful shutdown
+  voice/                 Voice Agent, one module per concern (voice-agent.js re-exports it):
+    session.js           start, turn, complete      relay.js          ring, answer, hang up
+    recall.js            memory recall, de-dupe      prompt.js         persona system prompt
+    citations.js         [mN] citations              extraction.js     outcome extraction
+    session-store.js     sessions + SQLite restore   inflight.js       saves/retains in flight
+    trace.js, util.js    step timings, helpers
+  voice-routes.js        Voice Agent HTTP routes   commitments.js  commitment ledger
   hindsight.js           Hindsight REST client  memory-routes.js  memory, reflect, matching routes
   decision.js            Decision Agent         retain-queue.js   durable retain retries
   seed-memory.js         seeds the bank         db.js, sqlite-compat.js

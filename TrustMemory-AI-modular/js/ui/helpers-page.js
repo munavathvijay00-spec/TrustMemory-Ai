@@ -43,7 +43,7 @@ function pageHelpers(){
       <div>
         <div class="eyebrow">Helpers</div>
         <h1>Helper roster</h1>
-        <div class="lede">Every profile carries a full memory timeline stored directly in Hindsight Core.</div>
+        <div class="lede">Open a profile to see what the agency has learned about her, her promises, and her standing profile.</div>
       </div>
       <button class="btn brass" id="toggleAddHelperBtn" onclick="toggleAddHelperForm()">${showAddHelperForm ? '✕ Cancel' : '+ Add Helper'}</button>
     </div>
@@ -109,75 +109,33 @@ function pageHelpers(){
     <div class="card"><div class="rowlist">${rows}</div></div>`;
 }
 
-function handleCreateHelper(event){
+async function handleCreateHelper(event){
   event.preventDefault();
-  const name = document.getElementById('nhName').value.trim();
-  const location = document.getElementById('nhLocation').value.trim();
-  const exp = parseInt(document.getElementById('nhExp').value, 10) || 0;
-  const availability = document.getElementById('nhAvailability').value;
-  const bg = document.getElementById('nhBackground').value.trim();
-
-  const skillCheckboxes = document.querySelectorAll('input[name="nhSkill"]:checked');
-  const skills = Array.from(skillCheckboxes).map(cb => cb.value);
-
-  if(!name || !location){
-    alert('Please enter a name and location.');
-    return;
-  }
-  if(skills.length === 0){
-    alert('Please select at least one skill.');
-    return;
-  }
-
-  // Generate unique ID and avatar color
-  const id = name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10) + '_' + uid().slice(0, 4);
-  const colors = ['#8F6A2E', '#3F6659', '#5B4A8F', '#A6453A', '#31507A'];
-  const color = colors[S.helpers.length % colors.length];
-
-  // No invented suitability scores: fit is judged from memory evidence on the Matching page.
-  const roleScores = {};
-
-  const newHelper = {
-    id,
-    name,
-    location,
-    exp,
-    skills,
-    availability,
-    roleScores,
-    color
+  const form = event.target;
+  const body = {
+    name: document.getElementById('nhName').value.trim(),
+    location: document.getElementById('nhLocation').value.trim(),
+    experience_years: parseInt(document.getElementById('nhExp').value, 10),
+    availability: document.getElementById('nhAvailability').value,
+    background: document.getElementById('nhBackground').value.trim(),
+    skills: Array.from(document.querySelectorAll('input[name="nhSkill"]:checked')).map(cb => cb.value),
   };
-
-  S.helpers.unshift(newHelper);
-
-  // 1. Retain into Hindsight Core: World Network
-  retain(id, 'world', `${name} has ${exp} years of verified experience.`, {entityType: 'helper', source: 'manual_entry'});
-  retain(id, 'world', `Skills & capabilities: ${skills.map(roleLabel).join(', ')}.`, {entityType: 'helper'});
-  retain(id, 'world', `Based in ${location}. Availability: ${availability}.`, {entityType: 'helper'});
-
-  if(bg){
-    retain(id, 'world', bg, {entityType: 'helper', category: 'background_note'});
+  const btn = form.querySelector('button[type="submit"]');
+  if(btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/helpers', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(d.error || 'Could not save the helper.');
+    upsertHelperFromServer(d);
+    window.SERVER_SCORES = window.SERVER_SCORES || {};
+    window.SERVER_SCORES[d.id] = {trust: d.trust, churn: d.churn};
+    log('mem', 'MEMORY AGENT', `Registered ${d.name}; profile saved and retained to Hindsight.`);
+    showAddHelperForm = false;
+    nav('helperDetail', d.id);
+  } catch(e){
+    alert(e.message);
+    if(btn) btn.disabled = false;
   }
-
-  // 2. Retain initial profile Opinion
-
-  // 3. Initialize scores
-  SCORES[id] = {
-    trust: 68,
-    churn: 18
-  };
-  SCORE_HISTORY[id] = [{
-    t: nowStamp(),
-    trust: 68,
-    churn: 18,
-    reason: 'Initial profile registration'
-  }];
-
-  // 4. Log to Agent Activity
-  log('mem', 'MEMORY AGENT', `Manually registered ${name}. Retained 4 world facts into Hindsight Core.`);
-
-  showAddHelperForm = false;
-  nav('helperDetail', id);
 }
 
 function pageHelperDetail(id){
@@ -248,12 +206,6 @@ function pageHelperDetail(id){
   </div>
   <div class="grid g2">
     <div class="section" style="margin:0;">
-      <h2>Memory timeline</h2>
-      <div class="card"><div class="timeline">
-        ${evs.map(e => `<div class="tl-item ${eventTone(e.type)}"><div class="date">${fmtDate(e.date)}</div><div class="txt">${escapeHtml(e.description)}</div><div class="tag">${e.type.replace('_',' ')}${e.severity ? ' · ' + e.severity : ''}</div></div>`).join('') || '<div style="color:var(--ink-soft); font-size:13px;">No events recorded yet. Calls and notes will appear here.</div>'}
-      </div></div>
-
-      <div class="hr"></div>
       <h2>Add a coordinator note</h2>
       <div class="card">
         <form id="addMemoryForm" onsubmit="memuiAddNote(event, 'helper', '${h.id}', 'memText')">

@@ -31,6 +31,7 @@
     const el = $(map[phase]);
     if(el) el.style.display = phase === 'ringing' ? 'flex' : 'block';
     $('hpLive').style.display = phase === 'connected' ? 'block' : 'none';
+    $('hpConsent').style.display = (phase === 'ringing' || phase === 'connected') ? 'block' : 'none';
     $('hpLines').style.display = (phase === 'connected' || phase === 'ended') && state.lines.length ? 'flex' : 'none';
     const status = {off:'Tap below to switch the line on', idle:'Standby', ringing:'Incoming call…', connected:'Connected', ended:'Call ended'}[phase];
     $('hpStatus').textContent = status;

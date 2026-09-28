@@ -62,7 +62,7 @@ test('frontend: every script in index.html loads and every console page renders'
   }
   vm.runInContext('initApp()', ctx);
 
-  const pages = ['dashboard', 'helpers', 'households', 'placements', 'memory', 'matching', 'insights', 'voice', 'activity', 'architecture', 'settings'];
+  const pages = ['dashboard', 'people', 'helpers', 'households', 'memory', 'matching', 'voice', 'activity'];
   for (const page of pages) {
     vm.runInContext(`nav(${JSON.stringify(page)}, null)`, ctx);
     const html = ctx.document.getElementById('content').innerHTML;
@@ -72,11 +72,12 @@ test('frontend: every script in index.html loads and every console page renders'
   vm.runInContext("nav('helperDetail', 'radha')", ctx);
   assert.match(ctx.document.getElementById('content').innerHTML, /Radha Kumari/);
 
-  // The architecture and settings pages describe the stack that actually runs.
-  vm.runInContext("nav('architecture')", ctx);
-  const arch = ctx.document.getElementById('content').innerHTML;
-  assert.match(arch, /Hindsight/);
-  assert.doesNotMatch(arch, /Vapi|Bland|Dograh|Supabase|Next\.js|FastAPI/);
+  // Helpers and households share the People page as two tabs.
+  vm.runInContext("nav('people', 'households')", ctx);
+  assert.match(ctx.document.getElementById('content').innerHTML, /Iyer Residence/);
+  // The removed pages are gone from the navigation.
+  const navIds = vm.runInContext('NAV_ADMIN.map(n => n.id)', ctx);
+  assert.deepEqual([...navIds], ['dashboard', 'people', 'memory', 'matching', 'voice', 'activity']);
 });
 
 test('frontend: simulated agents are gone and no script references them', () => {

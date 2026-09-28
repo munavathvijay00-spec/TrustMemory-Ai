@@ -32,6 +32,14 @@ db.exec(`
     evidence TEXT
   );
 `);
+// Added after the first version of the table: when the promise should be checked.
+if (!db.prepare('PRAGMA table_info(commitments)').all().some(c => c.name === 'due_date')) {
+  db.exec('ALTER TABLE commitments ADD COLUMN due_date TEXT');
+}
+
+const FOLLOW_UP_DAYS = 14;
+const ESCALATE_AFTER_BROKEN = 2;     // broken promises ...
+const ESCALATE_WINDOW_DAYS = 60;     // ... within this many days
 
 function nowSql() { return new Date().toISOString().replace('T', ' ').substring(0, 19); }
 function newId() { return 'cm_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
@@ -46,10 +54,12 @@ function listFor(helperId) {
     : db.prepare('SELECT * FROM commitments ORDER BY made_at DESC').all();
 }
 
-function add({ helperId, text, approach = null, callId = null, source = 'call', madeAt = null }) {
+function add({ helperId, text, approach = null, callId = null, source = 'call', madeAt = null, dueDate = null }) {
   const id = newId();
-  db.prepare('INSERT INTO commitments (id, helper_id, text, status, approach, source, made_at, made_call_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(id, helperId, String(text).slice(0, 300), 'open', APPROACHES[approach] ? approach : null, source, madeAt || nowSql(), callId);
+  const made = madeAt || nowSql();
+  const due = dueDate || new Date(new Date(made.replace(' ', 'T') + 'Z').getTime() + FOLLOW_UP_DAYS * 86400000).toISOString().slice(0, 10);
+  db.prepare('INSERT INTO commitments (id, helper_id, text, status, approach, source, made_at, made_call_id, due_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, helperId, String(text).slice(0, 300), 'open', APPROACHES[approach] ? approach : null, source, made, callId, due);
   return id;
 }
 
@@ -57,7 +67,39 @@ function resolve(id, status, { evidence = '', callId = null, at = null } = {}) {
   if (!['kept', 'broken', 'replaced'].includes(status)) return false;
   const r = db.prepare("UPDATE commitments SET status = ?, resolved_at = ?, resolved_call_id = ?, evidence = ? WHERE id = ? AND status = 'open'")
     .run(status, at || nowSql(), callId, String(evidence || '').slice(0, 300), id);
+  if (r.changes > 0 && status === 'broken') escalateIfNeeded(id);
   return r.changes > 0;
+}
+
+/** Helpers who broke ESCALATE_AFTER_BROKEN or more promises within the window. */
+function escalations() {
+  const since = new Date(Date.now() - ESCALATE_WINDOW_DAYS * 86400000).toISOString().replace('T', ' ').substring(0, 19);
+  return db.prepare(`SELECT helper_id, COUNT(*) AS broken, MAX(resolved_at) AS last_broken_at
+                     FROM commitments WHERE status = 'broken' AND resolved_at >= ?
+                     GROUP BY helper_id HAVING COUNT(*) >= ? ORDER BY last_broken_at DESC`).all(since, ESCALATE_AFTER_BROKEN);
+}
+
+/** A second broken promise within the window flags the coordinator in the activity log. */
+function escalateIfNeeded(commitmentId) {
+  const row = db.prepare('SELECT helper_id FROM commitments WHERE id = ?').get(commitmentId);
+  if (!row) return false;
+  const hit = escalations().find(e => e.helper_id === row.helper_id);
+  if (!hit) return false;
+  const helper = db.prepare('SELECT name FROM helpers WHERE id = ?').get(row.helper_id);
+  db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'decision', ?, ?)").run(
+    'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    'DECISION AGENT — Escalation: ' + (helper ? helper.name : row.helper_id) + ' has broken ' + hit.broken + ' promises in ' + ESCALATE_WINDOW_DAYS + ' days. Coordinator review and a matching review are recommended.',
+    nowSql());
+  return true;
+}
+
+/** Open promises due for a check-in: overdue, today, or within the next few days. */
+function due({ withinDays = 3 } = {}) {
+  const limit = new Date(Date.now() + withinDays * 86400000).toISOString().slice(0, 10);
+  const today = new Date().toISOString().slice(0, 10);
+  return db.prepare(`SELECT c.*, h.name AS helper_name FROM commitments c JOIN helpers h ON h.id = c.helper_id
+                     WHERE c.status = 'open' AND c.due_date IS NOT NULL AND c.due_date <= ? ORDER BY c.due_date ASC`).all(limit)
+    .map(c => Object.assign(c, { overdue: c.due_date < today, due_today: c.due_date === today }));
 }
 
 /** Kept rate and, per approach, how often commitments made that way were kept. */
@@ -133,4 +175,4 @@ function seedIfEmpty() {
 
 seedIfEmpty();
 
-module.exports = { APPROACHES, openFor, listFor, add, resolve, stats, whatWorks, timeline, seedIfEmpty };
+module.exports = { APPROACHES, openFor, listFor, add, resolve, stats, whatWorks, timeline, seedIfEmpty, due, escalations };

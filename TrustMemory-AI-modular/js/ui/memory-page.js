@@ -12,6 +12,7 @@ function pageMemory(){
   return `
   <div class="pagehead"><div class="eyebrow">Hindsight Core</div><h1>Retain · Recall · Reflect</h1><div class="lede">One bank for the agency. Every call, feedback and note is retained; Hindsight extracts facts, links entities and time, consolidates observations, keeps standing profiles current, and enforces directives when it reflects.</div></div>
   <div class="section"><h2>Bank</h2>${typeof renderBankStats === 'function' ? renderBankStats() : ''}</div>
+  <div class="section"><h2>What the agency has learned</h2>${typeof renderObservationsBlock === 'function' ? renderObservationsBlock(null, null, {title:'Across all helpers and households'}) : ''}</div>
   <div class="section">${typeof renderRecallSearch === 'function' ? renderRecallSearch() : ''}</div>
   <div class="section">${typeof renderDirectivesBlock === 'function' ? renderDirectivesBlock() : ''}</div>
   <div class="section">

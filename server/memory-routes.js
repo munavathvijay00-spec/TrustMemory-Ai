@@ -19,6 +19,7 @@ const groq = require('./groq');
 const hindsight = require('./hindsight');
 const retainQueue = require('./retain-queue');
 const commitments = require('./commitments');
+const people = require('./people');
 
 const router = express.Router();
 
@@ -304,6 +305,60 @@ router.get('/api/memory/who-to-call', async (req, res) => {
       },
     });
   } catch (err) { fail(res, err); }
+});
+
+/* ------------------------------------------------------------------ create helpers and households */
+
+function peopleError(res, err) {
+  if (err instanceof people.ValidationError) return res.status(400).json({ error: err.message, code: 'VALIDATION' });
+  return fail(res, err);
+}
+
+router.post('/api/helpers', (req, res) => {
+  try { res.status(201).json(people.createHelper(req.body || {})); } catch (err) { peopleError(res, err); }
+});
+
+router.post('/api/households', (req, res) => {
+  try { res.status(201).json(people.createHousehold(req.body || {})); } catch (err) { peopleError(res, err); }
+});
+
+/* ------------------------------------------------------------------ dashboard: every number from the server */
+
+router.get('/api/dashboard', (req, res) => {
+  const count = sql => db.prepare(sql).get().n;
+  const helpers = db.prepare('SELECT id, name, trust, churn FROM helpers').all();
+  const households = db.prepare('SELECT id, name, difficulty FROM households').all();
+  const failed = Object.fromEntries(db.prepare("SELECT household_id, COUNT(*) AS n FROM placements WHERE status IN ('failed', 'ended_poor_fit') GROUP BY household_id").all().map(r => [r.household_id, r.n]));
+  const since7 = new Date(Date.now() - 7 * 86400000).toISOString().replace('T', ' ').substring(0, 19);
+  const ledger = commitments.stats(null);
+  const dueList = commitments.due({ withinDays: 3 });
+  const nameOf = id => (helpers.find(h => h.id === id) || {}).name || id;
+  const esc = commitments.escalations().map(e => Object.assign(e, { name: nameOf(e.helper_id) }));
+  const highChurn = helpers.filter(h => h.churn >= 55).sort((a, b) => b.churn - a.churn);
+  const hard = households.filter(h => h.difficulty >= 55).sort((a, b) => b.difficulty - a.difficulty);
+  const plural = n => (n === 1 ? '' : 's');
+
+  const alerts = []
+    .concat(esc.map(e => ({ level: 'bad', title: e.name + ' has broken ' + e.broken + ' promises in the last 60 days.', detail: 'Escalated automatically. Review the approach with her and consider a matching review.', action: { label: 'Open profile', page: 'helperDetail', param: e.helper_id } })))
+    .concat(dueList.filter(d => d.overdue).map(d => ({ level: 'warn', title: 'Follow-up overdue with ' + d.helper_name + ' (due ' + d.due_date + ').', detail: 'Promise to check: ' + d.text, action: { label: 'Ring now', ring: d.helper_id } })))
+    .concat(hard.map(h => ({ level: 'bad', title: h.name + ': difficulty ' + h.difficulty + '/100.', detail: (failed[h.id] || 0) + ' placement' + plural(failed[h.id] || 0) + ' ended early. Check what the household expects before placing again.', action: { label: 'Open household', page: 'householdDetail', param: h.id } })))
+    .concat(highChurn.map(h => ({ level: 'warn', title: h.name + ': churn risk ' + h.churn + '/100.', detail: 'Scored by the Decision Agent from her calls. A coaching call is recommended.', action: { label: 'Ring', ring: h.id } })));
+
+  res.json({
+    counts: {
+      helpers: helpers.length,
+      households: households.length,
+      active_placements: count("SELECT COUNT(*) AS n FROM placements WHERE status = 'active'"),
+      calls_last_7_days: db.prepare("SELECT COUNT(*) AS n FROM calls WHERE status = 'completed' AND created_at >= ?").get(since7).n,
+      high_churn: highChurn.length,
+      high_difficulty: hard.length,
+      promises_open: ledger.open,
+      promises_kept_rate: ledger.kept_rate,
+    },
+    due: dueList.map(d => ({ id: d.id, helper_id: d.helper_id, helper_name: d.helper_name, text: d.text, due_date: d.due_date, overdue: d.overdue, due_today: d.due_today })),
+    escalations: esc,
+    alerts,
+  });
 });
 
 /* ------------------------------------------------------------------ commitment ledger */

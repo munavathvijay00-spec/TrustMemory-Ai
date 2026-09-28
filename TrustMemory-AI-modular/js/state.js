@@ -115,29 +115,20 @@ function memOf(id){
    MULTI-ROLE NAVIGATION & PERMISSIONS
 --------------------------------------------------------------------- */
 const NAV_ADMIN = [
-  {id:'dashboard', label:'Coordinator Dashboard'},
-  {id:'helpers', label:'Helpers'},
-  {id:'households', label:'Households'},
-  {id:'placements', label:'Placements'},
+  {id:'dashboard', label:'Dashboard'},
+  {id:'people', label:'People'},
   {id:'memory', label:'Hindsight Core'},
   {id:'matching', label:'Matching'},
-  {id:'insights', label:'Insights'},
   {id:'voice', label:'Voice Agent'},
   {id:'activity', label:'Agent Activity'},
-  {id:'architecture', label:'Architecture'},
-  {id:'settings', label:'Settings'},
 ];
 
 const NAV_HELPER = [
-  {id:'helperDetail', label:'My Helper Profile'},
-  {id:'memory', label:'My Memory Timeline'},
-  {id:'settings', label:'Settings & Account'},
+  {id:'helperDetail', label:'My Profile'},
 ];
 
 const NAV_HOUSEHOLD = [
-  {id:'householdDetail', label:'My Residence Profile'},
-  {id:'placements', label:'My Placements & Helper'},
-  {id:'settings', label:'Settings & Account'},
+  {id:'householdDetail', label:'My Household'},
 ];
 
 function getNavForCurrentUser(){

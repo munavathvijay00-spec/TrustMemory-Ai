@@ -395,6 +395,22 @@ function lvDiffLines(before, after){
   return { added: a.filter(l => !bs.has(norm(l))), removed: b.filter(l => !as.has(norm(l))) };
 }
 
+/** A plain-text call summary for the coordinator, shared through WhatsApp (wa.me link, no API key needed). */
+function lvWhatsAppLink(s){
+  const r = s.result; if(!r) return '';
+  const o = r.outcome || {};
+  const lines = [
+    'TrustMemory call summary: ' + s.helperName + ' (' + new Date().toISOString().slice(0, 10) + ')',
+    o.coordinator_note || '',
+    o.root_cause_identified ? 'Reason: ' + o.root_cause_identified : '',
+    r.new_commitment ? 'Promise: ' + r.new_commitment : '',
+    (r.commitment_checks || []).map(c => (c.status === 'kept' ? 'Kept: ' : 'Not kept: ') + c.text).join('\n'),
+    o.follow_up_date ? 'Follow-up: ' + o.follow_up_date : '',
+    r.decision ? 'Churn risk: ' + r.decision.old_churn + ' -> ' + r.decision.new_churn : '',
+  ].filter(Boolean).join('\n');
+  return 'https://wa.me/?text=' + encodeURIComponent(lines);
+}
+
 function lvCommitmentResult(s){
   const r = s.result;
   if(!r) return '';
@@ -711,6 +727,7 @@ function lvResultPanel(s){
       ${fbHtml}
       ${propHtml}
       <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center;">
+        <a class="btn sm" href="${lvWhatsAppLink(s)}" target="_blank" rel="noopener" style="text-decoration:none;">Share summary on WhatsApp</a>
         <button class="btn sm brass" onclick="lvStartFollowUp()">↻ Run the follow-up call now</button>
         <span style="font-size:11px; color:var(--ink-soft);">In practice this call happens on the follow-up date. The agent recalls what was promised and asks whether it held.</span>
       </div>

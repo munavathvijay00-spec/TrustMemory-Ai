@@ -1,7 +1,5 @@
 /** HTTP routes for the browser voice agent + memory status. */
 const express = require('express');
-const groq = require('./groq');
-const hindsight = require('./hindsight');
 const agent = require('./voice-agent');
 
 const router = express.Router();

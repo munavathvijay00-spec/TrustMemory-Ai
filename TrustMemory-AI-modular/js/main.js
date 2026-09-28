@@ -24,6 +24,42 @@ function addEventOnce(e){
   if(!S.events.some(x => x.id === e.id)) S.events.push(e);
 }
 
+function parseSkills(v){
+  if(Array.isArray(v)) return v;
+  try { const a = JSON.parse(v || '[]'); return Array.isArray(a) ? a : []; } catch(e){ return []; }
+}
+
+/** Server helper row -> console helper object (added if new, profile fields refreshed if known). */
+function upsertHelperFromServer(r){
+  const skills = parseSkills(r.skills);
+  let h = S.helpers.find(x => x.id === r.id);
+  if(!h){
+    h = {id: r.id, name: r.name, location: '', exp: 0, skills: [], availability: '', roleScores: {}, color: r.color || '#5B6572'};
+    S.helpers.push(h);
+  }
+  h.name = r.name;
+  h.exp = r.experience_years;
+  if(r.location) h.location = r.location;
+  if(skills.length) h.skills = skills;
+  else if(!h.skills.length && r.role) h.skills = [r.role];
+  if(r.availability) h.availability = r.availability;
+  if(r.color) h.color = r.color;
+  return h;
+}
+
+function upsertHouseholdFromServer(r){
+  let hh = S.households.find(x => x.id === r.id);
+  if(!hh){
+    hh = {id: r.id, name: r.name, location: '', requirement: r.need, schedule: ''};
+    S.households.push(hh);
+  }
+  hh.name = r.name;
+  hh.requirement = r.need || hh.requirement;
+  if(r.location) hh.location = r.location;
+  if(r.schedule) hh.schedule = r.schedule;
+  return hh;
+}
+
 async function syncBackendData(){
   try {
     const [hRes, hhRes, cRes, aRes] = await Promise.all([
@@ -32,6 +68,10 @@ async function syncBackendData(){
       fetch('/api/calls').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/activity').then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
+
+    // The roster comes from the server, so people added from the console survive a refresh.
+    if(hRes && Array.isArray(hRes)) hRes.forEach(upsertHelperFromServer);
+    if(hhRes && Array.isArray(hhRes)) hhRes.forEach(upsertHouseholdFromServer);
 
     if(hRes && Array.isArray(hRes)){
       window.SERVER_SCORES = {};
@@ -128,11 +168,36 @@ async function syncBackendData(){
   }
 }
 
+/** Groq / Hindsight / retry-queue status in the sidebar (what the Settings page used to show). */
+async function renderRailStatus(){
+  const el = document.getElementById('railStatus');
+  if(!el) return;
+  try {
+    const h = await fetch('/api/health').then(r => r.json());
+    const dot = ok => `<span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:${ok ? '#5FB38A' : '#D9822B'}; margin-right:4px;"></span>`;
+    el.innerHTML = `<div style="font-size:11px; color:#A6B0BD; padding:8px 14px; line-height:1.7;">
+      ${dot(h.groq && h.groq.configured)}Groq${h.groq && h.groq.keys ? ' · ' + h.groq.keys + ' key' + (h.groq.keys === 1 ? '' : 's') : ''}<br>
+      ${dot(h.hindsight && h.hindsight.configured)}Hindsight${h.hindsight && h.hindsight.bank ? ' · ' + h.hindsight.bank : ''}<br>
+      ${h.retains_waiting ? dot(false) + h.retains_waiting + ' retain' + (h.retains_waiting === 1 ? '' : 's') + ' waiting for retry' : ''}
+    </div>`;
+  } catch(e){
+    el.innerHTML = '<div style="font-size:11px; color:#D9822B; padding:8px 14px;">Server unreachable</div>';
+  }
+}
+
 function initApp(){
   const resetBtn = document.getElementById('resetBtn');
   if(resetBtn){
     resetBtn.onclick = resetDemo;
   }
+
+  // Restore the page from the URL (#/page/param) so a refresh keeps the coordinator where they were.
+  const fromHash = typeof routeFromHash === 'function' ? routeFromHash() : null;
+  if(fromHash) route = fromHash;
+  if(typeof window.addEventListener === 'function') window.addEventListener('hashchange', () => {
+    const r = routeFromHash();
+    if(r && (r.page !== route.page || String(r.param || '') !== String(route.param || ''))) nav(r.page, r.param, {fromHash: true});
+  });
 
   recalcAll();
   renderAuthRail();
@@ -142,6 +207,8 @@ function initApp(){
 
   // Sync real state from SQLite database
   syncBackendData();
+  renderRailStatus();
+  setInterval(renderRailStatus, 30000);
 
   log('mem','MEMORY AGENT', 'System initialized. Institutional memory loaded for helpers and households.');
 }

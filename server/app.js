@@ -56,7 +56,7 @@ function createApp({ port = process.env.PORT || 3000, logger = createLogger(), r
       try {
         transcript = JSON.parse(c.transcript || '[]');
         outcome = JSON.parse(c.outcome_json || '{}');
-      } catch (e) { /* keep defaults */ }
+      } catch { /* keep defaults */ }
       return { ...c, transcript, outcome };
     }));
   });

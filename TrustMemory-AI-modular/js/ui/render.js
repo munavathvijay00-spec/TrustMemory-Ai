@@ -2,7 +2,23 @@
    ui/render.js — router: nav(), renderCurrentPage(), highlightNav(), role guards
    ========================================================================= */
 
-function nav(page, param){
+const ROUTABLE = ['dashboard', 'people', 'helpers', 'households', 'helperDetail', 'householdDetail', 'memory', 'matching', 'voice', 'activity'];
+
+/** #/page or #/page/param -> {page, param}; null when the hash is empty or unknown. */
+function routeFromHash(){
+  if(typeof location === 'undefined') return null;
+  const m = String(location.hash || '').match(/^#\/([A-Za-z]+)(?:\/([^/]+))?$/);
+  if(!m || !ROUTABLE.includes(m[1])) return null;
+  return {page: m[1], param: m[2] ? decodeURIComponent(m[2]) : null};
+}
+
+function writeHash(page, param){
+  if(typeof location === 'undefined' || typeof history === 'undefined' || !history.pushState) return;
+  const h = '#/' + page + (param ? '/' + encodeURIComponent(param) : '');
+  if(location.hash !== h) history.pushState(null, '', h);
+}
+
+function nav(page, param, opts){
   // Check authentication gate
   if(!CURRENT_USER || !CURRENT_USER.isLoggedIn){
     showAuthGate();
@@ -14,9 +30,7 @@ function nav(page, param){
     // Workers can only see their own profile, memory timeline, and settings
     if(page === 'helperDetail'){
       param = CURRENT_USER.entityId;
-    } else if(page === 'memory'){
-      param = CURRENT_USER.entityId;
-    } else if(page !== 'settings'){
+    } else {
       page = 'helperDetail';
       param = CURRENT_USER.entityId;
     }
@@ -24,15 +38,15 @@ function nav(page, param){
     // Residencies can only see their own residence profile, placement history, and settings
     if(page === 'householdDetail'){
       param = CURRENT_USER.entityId;
-    } else if(page === 'placements'){
-      // Allowed
-    } else if(page !== 'settings'){
+    } else {
       page = 'householdDetail';
       param = CURRENT_USER.entityId;
     }
   }
 
+  if(page === 'dashboard' && typeof dashData !== 'undefined') dashData = null; // fresh numbers on every visit
   route = {page, param};
+  if(!(opts && opts.fromHash)) writeHash(page, param);
   renderCurrentPage();
   window.scrollTo(0, 0);
   highlightNav();
@@ -64,13 +78,15 @@ function renderCurrentPage(){
       if(typeof wireDashboard === 'function') wireDashboard();
       break;
 
+    case 'people':
     case 'helpers':
+    case 'households':
       if(CURRENT_USER.role !== 'admin'){
-        nav('helperDetail', CURRENT_USER.entityId);
+        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
         return;
       }
-      c.innerHTML = pageHelpers();
-      if(typeof wireHelpers === 'function') wireHelpers();
+      c.innerHTML = pagePeople(route.page === 'households' ? 'households' : (route.page === 'helpers' ? 'helpers' : (route.param || peopleTab)));
+      if(typeof wirePeople === 'function') wirePeople();
       break;
 
     case 'helperDetail':
@@ -80,15 +96,6 @@ function renderCurrentPage(){
       if(typeof wireHelperDetail === 'function') wireHelperDetail(targetHelperId);
       break;
 
-    case 'households':
-      if(CURRENT_USER.role !== 'admin'){
-        nav('householdDetail', CURRENT_USER.entityId);
-        return;
-      }
-      c.innerHTML = pageHouseholds();
-      if(typeof wireHouseholds === 'function') wireHouseholds();
-      break;
-
     case 'householdDetail':
       // If household role, always lock to their own ID
       const targetHouseholdId = (CURRENT_USER.role === 'household') ? CURRENT_USER.entityId : (route.param || 'h101');
@@ -96,9 +103,6 @@ function renderCurrentPage(){
       if(typeof wireHouseholdDetail === 'function') wireHouseholdDetail(targetHouseholdId);
       break;
 
-    case 'placements':
-      c.innerHTML = pagePlacements();
-      break;
 
     case 'memory':
       c.innerHTML = pageMemory();
@@ -114,13 +118,6 @@ function renderCurrentPage(){
       if(typeof wireMatching === 'function') wireMatching();
       break;
 
-    case 'insights':
-      if(CURRENT_USER.role !== 'admin'){
-        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
-        return;
-      }
-      c.innerHTML = pageInsights();
-      break;
 
     case 'voice':
       if(CURRENT_USER.role !== 'admin'){
@@ -140,14 +137,7 @@ function renderCurrentPage(){
       break;
 
 
-    case 'architecture':
-      c.innerHTML = pageArchitecture();
-      break;
 
-    case 'settings':
-      c.innerHTML = pageSettings();
-      if(typeof wireSettings === 'function') wireSettings();
-      break;
 
     default:
       c.innerHTML = '<div class="empty">Not found.</div>';
@@ -159,8 +149,9 @@ function highlightNav(){
   document.querySelectorAll('#navlist button').forEach(b => {
     const id = b.dataset.id;
     const isAct = id === route.page ||
-      (route.page === 'helperDetail' && (id === 'helpers' || id === 'helperDetail')) ||
-      (route.page === 'householdDetail' && (id === 'households' || id === 'householdDetail'));
+      (route.page === 'helperDetail' && (id === 'people' || id === 'helperDetail')) ||
+      (route.page === 'householdDetail' && (id === 'people' || id === 'householdDetail')) ||
+      ((route.page === 'helpers' || route.page === 'households') && id === 'people');
     b.classList.toggle('active', isAct);
   });
 }

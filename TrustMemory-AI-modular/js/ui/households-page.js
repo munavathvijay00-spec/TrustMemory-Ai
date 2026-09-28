@@ -94,57 +94,32 @@ function pageHouseholds(){
     <div class="card"><div class="rowlist">${rows}</div></div>`;
 }
 
-function handleCreateHousehold(event){
+async function handleCreateHousehold(event){
   event.preventDefault();
-  const name = document.getElementById('nhhName').value.trim();
-  const location = document.getElementById('nhhLocation').value.trim();
-  const requirement = document.getElementById('nhhRequirement').value;
-  const schedule = document.getElementById('nhhSchedule').value.trim();
-  const notes = document.getElementById('nhhNotes').value.trim();
-
-  if(!name || !location || !schedule){
-    alert('Please fill out name, location, and schedule.');
-    return;
-  }
-
-  const id = 'h_' + name.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8) + '_' + uid().slice(0, 4);
-
-  const newHousehold = {
-    id,
-    name,
-    location,
-    requirement,
-    schedule
+  const form = event.target;
+  const body = {
+    name: document.getElementById('nhhName').value.trim(),
+    location: document.getElementById('nhhLocation').value.trim(),
+    requirement: document.getElementById('nhhRequirement').value,
+    schedule: document.getElementById('nhhSchedule').value.trim(),
+    notes: document.getElementById('nhhNotes').value.trim(),
   };
-
-  S.households.unshift(newHousehold);
-
-  // 1. Retain into Hindsight Core: World Network
-  retain(id, 'world', `${name} is located in ${location}.`, {entityType: 'household', source: 'manual_entry'});
-  retain(id, 'world', `Current requirement: ${roleLabel(requirement)}. Schedule: ${schedule}.`, {entityType: 'household'});
-
-  if(notes){
-    retain(id, 'world', notes, {entityType: 'household', category: 'special_requirements'});
+  const btn = form.querySelector('button[type="submit"]');
+  if(btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/households', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(d.error || 'Could not save the household.');
+    upsertHouseholdFromServer(d);
+    window.SERVER_DIFFICULTY = window.SERVER_DIFFICULTY || {};
+    window.SERVER_DIFFICULTY[d.id] = d.difficulty;
+    log('mem', 'MEMORY AGENT', `Registered ${d.name}; profile saved and retained to Hindsight.`);
+    showAddHouseholdForm = false;
+    nav('householdDetail', d.id);
+  } catch(e){
+    alert(e.message);
+    if(btn) btn.disabled = false;
   }
-
-  // 2. Retain initial opinion
-  retain(id, 'opinion', 'Initial household profile established; baseline difficulty assessed at 20/100.', {difficulty: 20});
-
-  // 3. Initialize scores
-  SCORES[id] = {
-    difficulty: 20
-  };
-  SCORE_HISTORY[id] = [{
-    t: nowStamp(),
-    difficulty: 20,
-    reason: 'Initial residence registration'
-  }];
-
-  // 4. Log to Agent Activity
-  log('mem', 'MEMORY AGENT', `Manually registered ${name}. Retained requirement and preferences into Hindsight Core.`);
-
-  showAddHouseholdForm = false;
-  nav('householdDetail', id);
 }
 
 function pageHouseholdDetail(id){
@@ -199,12 +174,6 @@ function pageHouseholdDetail(id){
       </div></div>
 
       <div class="hr"></div>
-      <h2>Memory timeline</h2>
-      <div class="card"><div class="timeline">
-        ${evs.map(e => `<div class="tl-item ${eventTone(e.type)}"><div class="date">${fmtDate(e.date)}</div><div class="txt">${escapeHtml(e.description)}</div></div>`).join('') || '<div style="color:var(--ink-soft); font-size:13px;">No placement events logged yet.</div>'}
-      </div></div>
-
-      <div class="hr"></div>
       <h2>Add a coordinator note</h2>
       <div class="card">
         <form id="addHhMemoryForm" onsubmit="memuiAddNote(event, 'household', '${hh.id}', 'hhMemText')">
@@ -218,16 +187,11 @@ function pageHouseholdDetail(id){
     </div>
 
     <div class="section" style="margin:0;">
-      <h2>Reflection insights</h2>
-      ${reflections.length ? reflections.map(reflCard).join('') : `<div class="card">${emptyState('No reflections yet.','')}<div style="text-align:center;"><button class="btn brass sm" id="runReflectBtn">Run reflection agent</button></div></div>`}
-      ${reflections.length ? `<div style="margin-top:10px;"><button class="btn sm" id="runReflectBtn2">Re-run reflection</button></div>` : ''}
-      <div class="hr"></div>
       <h2>Voice Agent</h2>
       <div class="card">
         <div style="font-size:12px; color:var(--ink-soft); margin-bottom:10px;">Household check-in calls are an event source in their own right — the outcome is retained into memory the same as an app or WhatsApp event.</div>
-        <button class="btn sm" id="checkinBtn">Simulate household check-in call</button>
+        <button class="btn sm" id="checkinBtn">Ring the placed helper for a check-in</button>
       </div>
-      ${stagedBackupCard(id)}
     </div>
   </div>`;
 }
@@ -236,17 +200,6 @@ function handleAddHouseholdMemory(event, householdId){
   return memuiAddNote(event, 'household', householdId, 'hhMemText');
 }
 
-function stagedBackupCard(householdId){
-  const b = S.stagedBackups.find(x => x.householdId === householdId && x.status === 'staged');
-  if(!b) return '';
-  const backup = S.helpers.find(h => h.id === b.backupHelperId);
-  const atRisk = S.helpers.find(h => h.id === b.atRiskHelperId);
-  return `<div class="hr"></div><h2>Matching Agent</h2>
-    <div class="card" style="border-left:3px solid var(--brass);">
-      <div style="font-weight:600; font-size:13px;">Backup helper pre-staged</div>
-      <div style="font-size:12.5px; color:var(--ink-soft); margin-top:4px;">${backup ? backup.name : '—'} (match score ${b.score}/100) staged as backup, in case ${atRisk ? atRisk.name : 'the current helper'}'s placement needs replacement.</div>
-    </div>`;
-}
 
 function wireHouseholds(){}
 

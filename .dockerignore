@@ -1,0 +1,16 @@
+node_modules
+npm-debug.log
+.git
+.github
+.claude
+.env
+.env.*
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+test
+scratch
+coverage
+Dockerfile
+.dockerignore
