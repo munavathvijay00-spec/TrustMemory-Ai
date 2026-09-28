@@ -233,7 +233,8 @@ function pageHelperDetail(id){
         <button class="btn sm" onclick="nav('memory','${h.id}')">View in Hindsight Core</button>
       </div>
     </div>
-  </div>`;
+  </div>
+  ${typeof careHelperPanel === 'function' ? careHelperPanel(h.id) : ''}`;
 }
 
 function handleAddHelperMemory(event, helperId){
@@ -243,6 +244,7 @@ function handleAddHelperMemory(event, helperId){
 function wireHelpers(){}
 
 function wireHelperDetail(id){
+  if(typeof careWireHelper === 'function') careWireHelper(id);
   const coach = document.getElementById('coachBtn');
   if(coach) coach.onclick = () => {
     window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1, scenario: 'coaching_call'}, {helper: id});

@@ -83,6 +83,20 @@ async function main() {
     db.exec('DELETE FROM activity');
     db.exec('DELETE FROM commitments');
     try { db.exec('DELETE FROM retain_jobs'); } catch (e) { /* table created on first server start */ }
+    // Feature tables: keep the seeded rows, drop what live calls and demos added.
+    const optional = [
+      "DELETE FROM safety_signals WHERE source != 'seed'",
+      'DELETE FROM safety_flags',
+      "DELETE FROM outreach_signals WHERE substr(id, 1, 3) != 'os_'",
+      'DELETE FROM agency_learning_state',
+      'DELETE FROM household_feedback',
+      'DELETE FROM voice_sessions',
+      "DELETE FROM sessions WHERE account_id IN (SELECT id FROM accounts WHERE email NOT LIKE '%@trustmemory.demo')",
+      "DELETE FROM accounts WHERE email NOT LIKE '%@trustmemory.demo'",
+      'DELETE FROM helpers WHERE created_at IS NOT NULL',
+      'DELETE FROM households WHERE created_at IS NOT NULL',
+    ];
+    for (const sql of optional) { try { db.exec(sql); } catch (e) { /* table created on first server start */ } }
     for (const [id, [trust, churn]] of Object.entries(SEED_SCORES)) db.prepare('UPDATE helpers SET trust = ?, churn = ? WHERE id = ?').run(trust, churn, id);
     require('./commitments').seedIfEmpty();
     console.log('Local database restored to the seeded state.');

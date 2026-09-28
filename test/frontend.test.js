@@ -44,6 +44,7 @@ function makeContext() {
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     location: { href: 'http://localhost:3000/', origin: 'http://localhost:3000', search: '', hash: '' },
     navigator: { userAgent: 'node' },
+    TM_OFFLINE_CONSOLE: true,
     alert() {}, confirm: () => true, scrollTo() {},
     URLSearchParams, URL, Date, Math, JSON, Promise,
   };

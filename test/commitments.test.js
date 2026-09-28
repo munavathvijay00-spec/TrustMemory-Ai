@@ -62,3 +62,13 @@ test('commitments: a second broken promise within 60 days escalates once to the 
   const after = db.prepare("SELECT COUNT(*) AS n FROM activity WHERE text LIKE '%Escalation:%'").get().n;
   assert.equal(after, before + 1);
 });
+
+test('commitments: problem types are validated, and the older agency history seeds once', () => {
+  const id = commitments.add({ helperId: 'priya', text: 'Rest on Sundays', problemType: 'health' });
+  assert.equal(db.prepare('SELECT problem_type FROM commitments WHERE id = ?').get(id).problem_type, 'health');
+  assert.equal(commitments.setProblemType(id, 'astrology'), false);
+  assert.equal(commitments.setProblemType(id, 'workload'), true);
+  assert.equal(commitments.add({ helperId: 'priya', text: 'x', problemType: 'nonsense' }) && db.prepare("SELECT problem_type FROM commitments WHERE text = 'x'").get().problem_type, null);
+  assert.equal(commitments.seedHistory(), 0, 're-seeding adds nothing');
+  assert.equal(db.prepare("SELECT problem_type FROM commitments WHERE helper_id = 'radha' AND source = 'agency records'").get().problem_type, 'family');
+});

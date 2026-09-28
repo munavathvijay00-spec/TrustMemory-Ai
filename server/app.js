@@ -15,11 +15,33 @@ const { validate } = require('./validate');
 const healthRoutes = require('./health-routes');
 const voiceRoutes = require('./voice-routes');
 const memoryRoutes = require('./memory-routes');
+const auth = require('./auth');
+const authRoutes = require('./auth-routes');
+const careRoutes = require('./care-routes');
+const outreachRoutes = require('./outreach-routes');
 
-function createApp({ port = process.env.PORT || 3000, logger = createLogger(), rateLimit = createRateLimiter() } = {}) {
+function createApp({
+  port = process.env.PORT || 3000,
+  logger = createLogger(),
+  rateLimit = createRateLimiter(),
+  auth: authEnabled = process.env.TRUSTMEMORY_AUTH !== 'off',
+  seedDemo = authEnabled,
+} = {}) {
   const app = express();
 
+  if (seedDemo) {
+    // Demo accounts for the three roles. Generated passwords are printed once; set
+    // DEMO_*_PASSWORD in .env to choose (or reset) them.
+    for (const g of auth.seedDemoAccounts()) {
+      console.log(`[TrustMemory AI] Demo ${g.role} account ${g.email} created with password ${g.password} (set ${g.env} in .env to change it).`);
+    }
+  }
+
   app.use(logger);
+  // Express matches routes case-insensitively, but access control, rate limits and validation
+  // compare lowercase paths; refuse /API/..., /Api/... so nothing can slip past them.
+  app.use((req, res, next) => (/^\/api(\/|$)/i.test(req.path) && !/^\/api(\/|$)/.test(req.path)
+    ? res.status(404).json({ error: 'Not found.', code: 'NOT_FOUND' }) : next()));
   app.use(rateLimit);
   app.use(cors({ origin: [`http://localhost:${port}`, `http://127.0.0.1:${port}`] }));
   app.use(express.json({ limit: '64kb' }));
@@ -28,11 +50,16 @@ function createApp({ port = process.env.PORT || 3000, logger = createLogger(), r
   app.use(express.static(path.resolve(__dirname, '../TrustMemory-AI-modular')));
 
   app.use(validate);
+  // Sign-in and role checks for every /api route except health and the sign-in routes themselves.
+  app.use(authRoutes.accessControl({ enabled: authEnabled }));
+  app.use(authRoutes.router);
   app.use(healthRoutes);
 
   // Voice agent (browser call + helper phone screen) and Hindsight memory endpoints
   app.use(voiceRoutes);
   app.use(memoryRoutes);
+  app.use(careRoutes);      // handover brief, safety signals
+  app.use(outreachRoutes);  // today's calls, learning across helpers
 
   /* ---------------------------------------------------------------- read-only data for the dashboard */
 

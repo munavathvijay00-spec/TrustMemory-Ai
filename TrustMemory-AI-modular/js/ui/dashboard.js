@@ -25,6 +25,13 @@ function dashAction(a){
   return `<button class="btn sm" onclick="nav('${a.page}','${a.param || ''}')">${escapeHtml(a.label)}</button>`;
 }
 
+function dashGreeting(){
+  const h = new Date().getHours();
+  const name = typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.name ? String(CURRENT_USER.name) : '';
+  const first = name && !/agency|coordinator/i.test(name) ? ', ' + name.split(' ')[0] : '';
+  return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + first;
+}
+
 function pageDashboard(){
   if(!dashData && !dashLoading) loadDashboard();
   const d = dashData;
@@ -45,17 +52,20 @@ function pageDashboard(){
     : emptyState('Nothing to flag right now.', 'Alerts appear when a helper breaks promises, a follow-up is overdue, churn risk is high, or a household keeps losing helpers.'));
 
   return `
-    <div class="pagehead">
-      <div class="eyebrow">Coordinator Dashboard</div>
-      <h1>What needs you today</h1>
-      <div class="lede">Follow-ups that are due, escalations, and risks, all from the agency's memory and the commitment ledger.</div>
-    </div>
+    ${typeof motionHero === 'function' ? motionHero({
+      eyebrow: 'Coordinator Dashboard · ' + new Date().toLocaleDateString('en-IN', {weekday: 'long', day: 'numeric', month: 'long'}),
+      title: dashGreeting() + '. <em>Here is what needs you today.</em>',
+      lede: 'Follow-ups that are due, escalations and risks, all from agency memory and the commitment ledger. Every point on the right is a helper or household the agency remembers.',
+      stats: [{n: c && c.promises_open, label: 'open promises'}, {n: d && d.due ? d.due.length : null, label: 'follow-ups due'}, {n: d && d.alerts ? d.alerts.length : null, label: 'need attention'}],
+    }) : `<div class="pagehead"><div class="eyebrow">Coordinator Dashboard</div><h1>What needs you today</h1></div>`}
+    ${typeof careSafetyCard === 'function' ? careSafetyCard() : ''}
     <div class="grid g4" style="margin-bottom:20px;">
       ${tile(c && c.helpers, 'Helpers')}
       ${tile(c && c.active_placements, 'Active placements')}
       ${tile(c && c.calls_last_7_days, 'Calls in the last 7 days')}
       ${tile(c && (c.promises_kept_rate == null ? '–' : c.promises_kept_rate + '%'), 'Promises kept')}
     </div>
+    ${typeof outreachTodayCard === 'function' ? outreachTodayCard() : ''}
     <div class="section">
       <h2>Follow-ups due</h2>
       ${dueHtml}
@@ -69,4 +79,7 @@ function pageDashboard(){
   `;
 }
 
-function wireDashboard(){}
+function wireDashboard(){
+  if(typeof careWireDashboard === 'function') careWireDashboard();
+  if(typeof outreachWireDashboard === 'function') outreachWireDashboard();
+}

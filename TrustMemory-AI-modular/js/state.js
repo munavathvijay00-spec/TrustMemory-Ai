@@ -51,6 +51,7 @@ function seed(){
     {id:'p6', helperId:'fatima', householdId:'h104', role:'child_care', start:'2026-01-10', end:'2026-02-18', status:'failed'},
     {id:'p7', helperId:'lakshmi', householdId:'h101', role:'cleaning', start:'2025-06-01', end:null, status:'active'},
     {id:'p8', helperId:'meena', householdId:'h106', role:'cooking', start:'2025-05-01', end:null, status:'active'},
+    {id:'p9', helperId:'radha', householdId:'h105', role:'child_care', start:'2026-06-01', end:null, status:'active'},
   ];
 
   // Timeline events are derived from real records only: the placement roster here,
@@ -124,11 +125,11 @@ const NAV_ADMIN = [
 ];
 
 const NAV_HELPER = [
-  {id:'helperDetail', label:'My Profile'},
+  {id:'helperHome', label:'My work'},
 ];
 
 const NAV_HOUSEHOLD = [
-  {id:'householdDetail', label:'My Household'},
+  {id:'householdHome', label:'My household'},
 ];
 
 function getNavForCurrentUser(){
@@ -138,33 +139,25 @@ function getNavForCurrentUser(){
   return NAV_ADMIN;
 }
 
+/** The only page a helper or household account can open. */
+function homePageFor(){
+  if(CURRENT_USER && CURRENT_USER.role === 'helper') return 'helperHome';
+  if(CURRENT_USER && CURRENT_USER.role === 'household') return 'householdHome';
+  return 'dashboard';
+}
+
 /* ---------------------------------------------------------------------
    SIGNED-IN USER
-   The console always runs as the agency coordinator. There is no login:
-   the server listens on localhost only by default and serves one agency.
+   Filled from the server session by authBoot() (js/auth.js). The coordinator
+   default below is what the console uses when authentication is switched off
+   (TRUSTMEMORY_AUTH=off) or the server cannot be reached.
+   role: 'admin' (the coordinator) | 'helper' | 'household'
 --------------------------------------------------------------------- */
 let CURRENT_USER = {
   isLoggedIn: true,
   name: 'Agency Coordinator',
   email: '',
-  username: 'coordinator',
-  role: 'admin', // 'admin' | 'helper' | 'household' (navigation still branches on role)
-  entityId: null
+  role: 'admin',
+  entityId: null,   // helper or household id for those roles
+  authMode: 'off',  // 'on' when signed in with a real session
 };
-
-function renderAuthRail(){
-  const box = document.getElementById('authBox');
-  if(!box) return;
-  box.innerHTML = `
-    <div class="user-profile-badge">
-      <div class="user-avatar">${initials(CURRENT_USER.name)}</div>
-      <div class="user-info">
-        <div class="user-name">${escapeHtml(CURRENT_USER.name)}</div>
-        <div class="user-email">Coordinator console</div>
-      </div>
-    </div>
-  `;
-}
-
-/** Kept for callers from the old sign-in flow; the coordinator is always signed in. */
-function showAuthGate(){}

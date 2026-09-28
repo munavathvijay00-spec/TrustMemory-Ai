@@ -100,7 +100,8 @@ function activity(text) {
     .run('act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), text, nowSql());
 }
 
-function createHelper(input = {}) {
+/** Validate and normalise a helper profile without creating it (sign-up keeps it until approval). */
+function checkHelper(input = {}) {
   const name = text(input.name, 'Name', { max: 60 });
   if (!/^[\p{L} .'-]+$/u.test(name)) throw new ValidationError('Name can only contain letters, spaces, dots, apostrophes and hyphens.');
   const location = text(input.location, 'Location', { max: 60 });
@@ -111,6 +112,11 @@ function createHelper(input = {}) {
   const availability = AVAILABILITY.includes(input.availability) ? input.availability : 'Full-time';
   const background = text(input.background, 'Background', { min: 0, max: 500, required: false });
   if (db.prepare('SELECT 1 FROM helpers WHERE lower(name) = lower(?)').get(name)) throw new ValidationError(`A helper called ${name} already exists.`);
+  return { name, location, experience_years: exp, skills, availability, background };
+}
+
+function createHelper(input = {}) {
+  const { name, location, experience_years: exp, skills, availability, background } = checkHelper(input);
 
   const id = uniqueId('', name, 'helpers');
   const color = COLORS[db.prepare('SELECT COUNT(*) AS n FROM helpers').get().n % COLORS.length];
@@ -128,14 +134,21 @@ function createHelper(input = {}) {
   return getHelper(id);
 }
 
-function createHousehold(input = {}) {
+/** Validate and normalise a household profile without creating it. */
+function checkHousehold(input = {}) {
   const name = text(input.name, 'Name', { max: 60 });
+  if (!/^[\p{L}\p{N} .'&-]+$/u.test(name)) throw new ValidationError('Name can only contain letters, numbers, spaces and the characters . \' & -');
   const location = text(input.location, 'Location', { max: 60 });
   const need = ROLES.includes(input.requirement) ? input.requirement : null;
   if (!need) throw new ValidationError('Pick what the household needs: ' + ROLES.join(', ') + '.');
   const schedule = text(input.schedule, 'Schedule', { max: 100 });
   const notes = text(input.notes, 'Notes', { min: 0, max: 500, required: false });
   if (db.prepare('SELECT 1 FROM households WHERE lower(name) = lower(?)').get(name)) throw new ValidationError(`A household called ${name} already exists.`);
+  return { name, location, requirement: need, schedule, notes };
+}
+
+function createHousehold(input = {}) {
+  const { name, location, requirement: need, schedule, notes } = checkHousehold(input);
 
   const id = uniqueId('h_', name, 'households');
   db.prepare('INSERT INTO households (id, name, need, difficulty, location, schedule, notes, created_at) VALUES (?, ?, ?, 20, ?, ?, ?, ?)')
@@ -161,4 +174,4 @@ function getHousehold(id) { return db.prepare('SELECT * FROM households WHERE id
 function listHelpers() { return db.prepare('SELECT * FROM helpers ORDER BY created_at IS NULL, created_at DESC, name').all().map(parseHelper); }
 function listHouseholds() { return db.prepare('SELECT * FROM households ORDER BY created_at IS NULL, created_at DESC, name').all(); }
 
-module.exports = { ROLES, AVAILABILITY, ValidationError, createHelper, createHousehold, getHelper, getHousehold, listHelpers, listHouseholds };
+module.exports = { ROLES, AVAILABILITY, ValidationError, checkHelper, checkHousehold, createHelper, createHousehold, getHelper, getHousehold, listHelpers, listHouseholds };

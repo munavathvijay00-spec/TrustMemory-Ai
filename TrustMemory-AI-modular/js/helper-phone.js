@@ -20,7 +20,30 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
   const $ = id => document.getElementById(id);
-  const state = { phase: 'off', call: null, sessionId: null, lines: [], timerStart: 0, timer: null, poll: null, ring: null, audio: null, rec: null, listenTries: 0, busy: false };
+  const state = { phase: 'off', call: null, sessionId: null, lines: [], timerStart: 0, timer: null, poll: null, ring: null, audio: null, rec: null, listenTries: 0, busy: false, lang: 'en-IN' };
+
+  // What the helper sees in her call language. The agent's lines arrive already in that language.
+  const TEXT = {
+    'en-IN': { consent: 'This call is recorded and remembered so the agency can support you. You can ask the agency what it has on record about you at any time.', speak: '🎤 Speak', end: 'End call', typed: 'Or type your reply', listening: 'Listening… speak now', you: 'You', agency: 'Agency' },
+    'hi-IN': { consent: 'यह कॉल रिकॉर्ड की जाती है और याद रखी जाती है ताकि एजेंसी आपकी मदद कर सके। आप कभी भी एजेंसी से पूछ सकती हैं कि आपके बारे में क्या लिखा है।', speak: '🎤 बोलिए · Speak', end: 'कॉल खत्म · End', typed: 'या यहाँ लिखिए', listening: 'सुन रहे हैं… बोलिए', you: 'आप', agency: 'एजेंसी' },
+    'te-IN': { consent: 'ఈ కాల్ రికార్డ్ చేయబడుతుంది, ఏజెన్సీ మీకు సహాయం చేయడానికి గుర్తుంచుకుంటుంది. మీ గురించి ఏమి రాసి ఉందో ఎప్పుడైనా ఏజెన్సీని అడగవచ్చు.', speak: '🎤 మాట్లాడండి · Speak', end: 'కాల్ ముగించు · End', typed: 'లేదా ఇక్కడ టైప్ చేయండి', listening: 'వింటున్నాం… మాట్లాడండి', you: 'మీరు', agency: 'ఏజెన్సీ' },
+  };
+  function t(key){ return (TEXT[state.lang] || TEXT['en-IN'])[key]; }
+
+  /** Switch the screen to the call's language: labels, consent line, listening and speaking. */
+  function setLanguage(speechLang){
+    state.lang = TEXT[speechLang] ? speechLang : 'en-IN';
+    document.documentElement.lang = state.lang.slice(0, 2);
+    $('hpConsent').textContent = t('consent');
+    $('btnSpeak').textContent = t('speak');
+    $('btnHangup').textContent = t('end');
+    $('hpTyped').placeholder = t('typed');
+    $('hpListen').textContent = t('listening');
+    $('hpVoiceNote').textContent = '';
+    if(state.lang !== 'en-IN' && 'speechSynthesis' in window && !voiceFor(state.lang)){
+      $('hpVoiceNote').textContent = 'No ' + (state.lang === 'hi-IN' ? 'Hindi' : 'Telugu') + ' voice is installed on this device, so the agency words are shown here to read instead of spoken.';
+    }
+  }
 
   /* ---------------------------------------------------------------- helpers */
 
@@ -45,14 +68,14 @@
 
   function renderLines(){
     const recent = state.lines.slice(-4);
-    $('hpLines').innerHTML = recent.map(l => `<div class="hp-line ${l.me ? 'me' : ''}"><div class="who">${l.me ? 'You' : 'Agency'}</div>${esc(l.text)}</div>`).join('');
+    $('hpLines').innerHTML = recent.map(l => `<div class="hp-line ${l.me ? 'me' : ''}"><div class="who">${l.me ? t('you') : t('agency')}</div>${esc(l.text)}</div>`).join('');
     $('hpLines').style.display = recent.length ? 'flex' : 'none';
   }
 
   async function api(path, body){
     const res = await fetch(path, body ? {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)} : undefined);
     const data = await res.json().catch(() => ({}));
-    if(!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    if(!res.ok){ const err = new Error(data.error || ('HTTP ' + res.status)); err.status = res.status; throw err; }
     return data;
   }
 
@@ -81,8 +104,17 @@
 
   /* ---------------------------------------------------------------- speech */
 
+  /** An installed voice for the language (hi-IN / te-IN), or null. */
+  function voiceFor(lang){
+    const v = speechSynthesis.getVoices();
+    const base = lang.slice(0, 2);
+    return v.find(x => x.lang && x.lang.replace('_', '-').toLowerCase() === lang.toLowerCase())
+      || v.find(x => x.lang && x.lang.toLowerCase().startsWith(base + '-')) || null;
+  }
+
   function pickVoice(){
     const v = speechSynthesis.getVoices();
+    if(state.lang !== 'en-IN'){ const own = voiceFor(state.lang); if(own) return own; }
     return v.find(x => /en-IN/i.test(x.lang)) || v.find(x => /en-GB/i.test(x.lang) && /female/i.test(x.name)) || v.find(x => /^en/i.test(x.lang)) || null;
   }
 
@@ -90,9 +122,13 @@
     $('hpWave').classList.add('active');
     const finish = () => { $('hpWave').classList.remove('active'); if(done) done(); };
     if(!('speechSynthesis' in window)){ finish(); return; }
+    // No voice for Hindi or Telugu on this device: an English voice cannot read that script,
+    // so the line stays on screen and the call carries on after a short reading pause.
+    if(state.lang !== 'en-IN' && !voiceFor(state.lang)){ setTimeout(finish, Math.min(6000, 1200 + text.length * 40)); return; }
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     const v = pickVoice(); if(v) u.voice = v;
+    u.lang = v ? v.lang : state.lang;
     u.rate = 0.95;
     let fired = false;
     const once = () => { if(fired) return; fired = true; finish(); };
@@ -107,7 +143,7 @@
     try { if(state.rec) state.rec.abort(); } catch(e){}
     const r = new SR();
     state.rec = r;
-    r.lang = 'en-IN'; r.continuous = false; r.interimResults = true;
+    r.lang = state.lang; r.continuous = false; r.interimResults = true;
     let finalText = '';
     r.onstart = () => { $('hpListen').style.display = 'block'; $('hpInterim').textContent = ''; hint(''); };
     r.onresult = ev => {
@@ -153,6 +189,7 @@
           const d = await api('/api/voice/incoming?helper=' + encodeURIComponent(HELPER_ID));
           if(d.call && state.phase === 'idle'){
             state.call = d.call; state.sessionId = d.call.session_id;
+            setLanguage(d.call.speech_lang || 'en-IN');
             $('hpCaller').textContent = d.call.caller || 'Home-Care Agency';
             show('ringing'); startRing();
           }
@@ -176,6 +213,7 @@
     stopRing();
     try {
       const d = await api('/api/voice/answer', {session_id: state.sessionId, accept: true});
+      if(d.speech_lang) setLanguage(d.speech_lang);
       state.lines = [];
       show('connected'); startTimer();
       const greeting = d.greeting || (state.call && state.call.greeting) || '';
@@ -240,8 +278,15 @@
       const h = helpers.find(x => x.id === HELPER_ID);
       $('hpHelperName').textContent = h ? h.name : HELPER_ID;
       $('hpInitials').textContent = h ? h.name.split(' ').map(p => p[0]).join('').slice(0, 2) : '?';
-      if(!h) hint('Unknown helper "' + HELPER_ID + '". Open this page as helper.html?helper=radha');
-    } catch(e){ hint('Cannot reach the agency server.'); }
+      if(!h){ hint('Unknown helper "' + HELPER_ID + '". Open this page as helper.html?helper=radha'); $('btnActivate').disabled = true; }
+    } catch(e){
+      // Signed out (or signed in as someone else): say so instead of blaming the network.
+      if(e.status === 401 || e.status === 403){
+        $('hpStatus').innerHTML = 'Please <a href="/" style="color:inherit; font-weight:600;">sign in</a> first, then open your call screen again.';
+        hint('Sign in with your helper account (or the coordinator account for a demo).');
+        $('btnActivate').disabled = true;
+      } else hint('Cannot reach the agency server.');
+    }
 
     $('btnActivate').onclick = () => {
       // A user gesture unlocks audio playback and speech synthesis for the rest of the session.
@@ -254,7 +299,8 @@
     $('btnHangup').onclick = () => hangup('helper', 'You ended the call.');
     $('btnSpeak').onclick = () => { state.listenTries = 0; listen(); };
     $('hpTypedForm').onsubmit = ev => { ev.preventDefault(); const t = $('hpTyped').value.trim(); if(t){ $('hpTyped').value = ''; sendTurn(t); } };
-    if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => {};
+    // Voices load asynchronously; re-check the "no voice installed" note when they arrive.
+    if('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => { if(state.lang !== 'en-IN') setLanguage(state.lang); };
   }
 
   boot();

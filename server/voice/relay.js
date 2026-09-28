@@ -5,7 +5,7 @@
  * memory path, two screens.
  */
 const db = require('../db');
-const { nowSql } = require('./util');
+const { nowSql, LANGUAGES } = require('./util');
 const { SESSIONS, persist } = require('./session-store');
 
 const RING_TIMEOUT_MS = 60 * 1000;
@@ -54,6 +54,8 @@ function incoming(helperId) {
     caller: 'Home-Care Agency',
     helper: { id: found.helper.id, name: found.helper.name },
     greeting: found.transcript[0] ? found.transcript[0].text : '',
+    language: found.language || 'en',
+    speech_lang: LANGUAGES[found.language || 'en'].speech,
     rang_at: found.callStateAt,
   };
 }
@@ -65,7 +67,7 @@ function answer(sessionId, accept) {
   setCallState(s, accept ? 'connected' : 'declined');
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'voice', ?, ?)").run(
     'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), 'VOICE AGENT — ' + s.helper.name + (accept ? ' answered the call.' : ' declined the call.'), nowSql());
-  return { session_id: s.id, call_state: s.callState, greeting: s.transcript[0] ? s.transcript[0].text : '' };
+  return { session_id: s.id, call_state: s.callState, greeting: s.transcript[0] ? s.transcript[0].text : '', language: s.language || 'en', speech_lang: LANGUAGES[s.language || 'en'].speech };
 }
 
 function hangup(sessionId, by) {

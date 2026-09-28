@@ -11,8 +11,8 @@ function fail(res, err) {
 
 router.post('/api/voice/session', async (req, res) => {
   try {
-    const { helper_id, scenario, late_count, use_memory } = req.body || {};
-    res.json(await agent.startSession({ helperId: helper_id, scenario, lateCount: late_count, useMemory: use_memory !== false }));
+    const { helper_id, scenario, late_count, use_memory, language, purpose } = req.body || {};
+    res.json(await agent.startSession({ helperId: helper_id, scenario, lateCount: late_count, useMemory: use_memory !== false, language, purpose }));
   } catch (err) { fail(res, err); }
 });
 
@@ -33,6 +33,11 @@ router.post('/api/voice/complete', async (req, res) => {
 router.get('/api/voice/session/:id', (req, res) => {
   const s = agent.getSession(req.params.id);
   if (!s) return res.status(404).json({ error: 'Session not found.' });
+  // The helper's own phone screen gets the call, not the agency's notes about her.
+  if (req.account && req.account.role === 'helper') {
+    return res.json({ session_id: s.session_id, helper: { id: s.helper.id, name: s.helper.name }, language: s.language, speech_lang: s.speech_lang,
+      status: s.status, call_state: s.call_state, result: s.result ? { completed: true } : undefined });
+  }
   res.json(s);
 });
 

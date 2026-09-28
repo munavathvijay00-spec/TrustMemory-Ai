@@ -123,6 +123,7 @@ function seedDatabase() {
     { id: 'p6', helper_id: 'fatima', household_id: 'h104', role: 'child_care', status: 'failed', started_at: '2026-01-10', ended_at: '2026-02-18' },
     { id: 'p7', helper_id: 'lakshmi', household_id: 'h101', role: 'cleaning', status: 'active', started_at: '2025-06-01', ended_at: null },
     { id: 'p8', helper_id: 'meena', household_id: 'h106', role: 'cooking', status: 'active', started_at: '2025-05-01', ended_at: null },
+    { id: 'p9', helper_id: 'radha', household_id: 'h105', role: 'child_care', status: 'active', started_at: '2026-06-01', ended_at: null },
   ];
 
   for (const p of placements) {
@@ -149,5 +150,9 @@ function seedDatabase() {
 }
 
 seedDatabase();
+
+// Radha's current placement with the Gupta family (her seeded memory describes it); added for databases seeded before it existed.
+db.prepare(`INSERT OR IGNORE INTO placements (id, helper_id, household_id, role, status, started_at, ended_at)
+            SELECT 'p9', 'radha', 'h105', 'child_care', 'active', '2026-06-01', NULL WHERE EXISTS (SELECT 1 FROM helpers WHERE id = 'radha')`).run();
 
 module.exports = db;

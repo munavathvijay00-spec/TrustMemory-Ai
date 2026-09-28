@@ -14,6 +14,7 @@ function pageVoice(){
     ['household_checkin', 'Placement check-in (how is it going?)'],
     ['escalation_call', 'Escalation (commitment not kept)'],
   ];
+  const languages = [['en', 'English'], ['hi', 'हिन्दी · Hindi'], ['te', 'తెలుగు · Telugu']];
   const labelStyle = 'display:block; font-size:11px; font-weight:700; text-transform:uppercase; margin-bottom:5px; color:var(--ink-soft);';
   const fieldStyle = 'width:100%; padding:9px 12px; font-size:13px; border:1px solid var(--line-strong); border-radius:var(--radius); background:#fff; box-sizing:border-box;';
 
@@ -47,6 +48,16 @@ function pageVoice(){
             ${scenarios.map(([v, l]) => `<option value="${v}" ${VF.scenario === v ? 'selected' : ''}>${l}</option>`).join('')}
           </select>
         </div>
+        <div>
+          <label style="${labelStyle}">Language</label>
+          <select id="vLanguage" onchange="window.VOICE_FORM.language = this.value" style="${fieldStyle}">
+            ${languages.map(([v, l]) => `<option value="${v}" ${(VF.language || 'en') === v ? 'selected' : ''}>${l}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="${labelStyle}">Reason for calling today (optional)</label>
+        <input type="text" id="vPurpose" maxlength="300" value="${escapeHtml(VF.purpose || '')}" placeholder="e.g. Dussehra is in three weeks; last year she came back nine days late" oninput="window.VOICE_FORM.purpose = this.value" style="${fieldStyle}" />
       </div>
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-top:12px; border-top:1px solid var(--line);">
         <div style="font-size:12px; color:var(--ink-soft);">

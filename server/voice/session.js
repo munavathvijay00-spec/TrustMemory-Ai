@@ -18,18 +18,35 @@ const hindsight = require('../hindsight');
 const { recalculateChurn } = require('../decision');
 const retainQueue = require('../retain-queue');
 const commitments = require('../commitments');
-const { END_TOKEN, nowSql, firstName, helperTags, daysBetween } = require('./util');
+const { END_TOKEN, LANGUAGES, nowSql, firstName, helperTags, daysBetween, callLanguage, callPurpose } = require('./util');
 const { wordSet, dedupeFacts, factOrigin, recallForHelper } = require('./recall');
 const { buildSystemPrompt } = require('./prompt');
 const { mayUseMemory, knownTags, attributeCitations, splitCitations } = require('./citations');
-const { extractOutcome } = require('./extraction');
+const { extractOutcome, PROBLEM_TYPES, SAFETY_KINDS } = require('./extraction');
+const hooks = require('./hooks');
 const { SESSIONS, persist, remove } = require('./session-store');
 const { expireRing } = require('./relay');
 const { record } = require('./trace');
 const inflight = require('./inflight');
 
-async function startSession({ helperId = 'anita', scenario = 'coaching_call', lateCount = 2, useMemory = true }) {
+/** Timings behind one agent line, for the console latency strip: memory recall, LLM, attribution, total. */
+function latencyOf(steps, llmStep, recallStep) {
+  const find = name => steps.filter(e => e.step === name).pop();
+  const recall = find(recallStep), llm = find(llmStep), attr = find('attribution');
+  const out = {
+    recall_ms: recall ? recall.ms : null,
+    recall_ok: recall ? recall.ok : null,
+    llm_ms: llm ? llm.ms : null,
+    attribution_ms: attr ? attr.ms : null,
+  };
+  out.total_ms = (out.recall_ms || 0) + (out.llm_ms || 0) + (out.attribution_ms || 0);
+  return out;
+}
+
+async function startSession({ helperId = 'anita', scenario = 'coaching_call', lateCount = 2, useMemory = true, language, purpose }) {
   const trace = [];
+  language = callLanguage(language);
+  purpose = callPurpose(purpose);
   if (lateCount === undefined || lateCount === null || lateCount === '') lateCount = 2;
   useMemory = useMemory !== false && useMemory !== 'false' && useMemory !== 0;
   const helper = db.prepare('SELECT * FROM helpers WHERE id = ?').get(helperId);
@@ -52,7 +69,7 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
   record(trace, 'ledger', tLedger, true, ledger ? ledger.open.length + ' open' : 'memory off');
   // Number the facts the same way the prompt does, so citations resolve back to them.
   memory.facts = memory.facts.slice(0, 11).map((f, i) => Object.assign({}, f, { tag: 'm' + (i + 1) }));
-  const system = buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls: useMemory ? priorCalls : [], ledger });
+  const system = buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls: useMemory ? priorCalls : [], ledger, language, purpose });
 
   const messages = [
     { role: 'system', content: system },
@@ -83,9 +100,11 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
     startedAt: new Date().toISOString(),
     lastActivity: Date.now(),
     useMemory,
+    language,
+    purpose,
     ledger,
     messages: [messages[0], { role: 'assistant', content: rawGreeting }],
-    transcript: [{ who: 'Agent', text: greeting, cited: g.cited, t: new Date().toISOString() }],
+    transcript: [{ who: 'Agent', text: greeting, cited: g.cited, t: new Date().toISOString(), latency: latencyOf(trace, 'llm_greeting', 'recall') }],
     status: 'active',
     result: null,
     trace,
@@ -95,7 +114,7 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
 
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'voice', ?, ?)").run(
     'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-    'VOICE AGENT — Live browser call started with ' + helper.name + ' (' + scenario + '). ' + (useMemory ? 'Recalled ' + memory.facts.length + ' memories from ' + memory.source + (memory.mentalModel ? ' plus the standing profile' : '') + '.' : 'Memory switched OFF for comparison.'),
+    'VOICE AGENT — Live browser call started with ' + helper.name + ' (' + scenario + (language !== 'en' ? ', in ' + LANGUAGES[language].name : '') + '). ' + (purpose ? 'Reason: ' + purpose + ' ' : '') + (useMemory ? 'Recalled ' + memory.facts.length + ' memories from ' + memory.source + (memory.mentalModel ? ' plus the standing profile' : '') + '.' : 'Memory switched OFF for comparison.'),
     nowSql()
   );
 
@@ -189,6 +208,9 @@ async function turn(sessionId, userText) {
   // Cut a reply where the model starts writing the helper's side ("\nRadha: ...").
   const nameRe = new RegExp('\\n\\s*' + firstName(s.helper.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:', 'i');
   if (nameRe.test(reply)) { reply = reply.split(nameRe)[0].trim(); ending = false; }
+  // In Hindi or Telugu the model writes her name in that script; cut at any one-word speaker label on a new line.
+  const labelRe = /\n\s*[\p{L}\p{M}]{1,24}\s*:/u;   // letters only, so a time like 10:30 is not a speaker
+  if (s.language && s.language !== 'en' && labelRe.test(reply)) { reply = reply.split(labelRe)[0].trim(); ending = false; }
 
   const c = splitCitations(reply);
   c.cited = knownTags(c.cited, s.memory.facts);
@@ -198,7 +220,7 @@ async function turn(sessionId, userText) {
     record(s.trace, 'attribution', tAttr, true, c.cited.length + ' cited', steps);
   }
   s.messages.push({ role: 'assistant', content: rawReply + (ending ? ' ' + END_TOKEN : '') });
-  s.transcript.push({ who: 'Agent', text: c.text, cited: c.cited, t: new Date().toISOString() });
+  s.transcript.push({ who: 'Agent', text: c.text, cited: c.cited, t: new Date().toISOString(), latency: latencyOf(steps, 'llm_reply', 'turn_recall') });
   if (ending) s.status = 'wrapping_up';
   persist(s);
 
@@ -265,6 +287,10 @@ async function saveCall(s) {
     helper_turns: s.transcript.filter(t => t.who !== 'Agent').length,
     approach_used: commitments.APPROACHES[outcome.approach_used] ? outcome.approach_used : null,
     commitment_checks: [],
+    problem_type: PROBLEM_TYPES.includes(outcome.problem_type) ? outcome.problem_type : null,
+    safety_concerns: (Array.isArray(outcome.safety_concerns) ? outcome.safety_concerns : [])
+      .filter(c => c && SAFETY_KINDS.includes(c.kind) && String(c.evidence || '').trim())
+      .slice(0, 5).map(c => ({ kind: c.kind, evidence: String(c.evidence).slice(0, 300) })),
   };
 
   // Commitment ledger: resolve what she said about earlier promises, then open the new one.
@@ -300,7 +326,7 @@ async function saveCall(s) {
     const dialogue = s.transcript.map(t => t.who + ': ' + t.text).join('\n');
     const fn = firstName(s.helper.name);
     const summaryText = [
-      'Coaching call with ' + s.helper.name + ' on ' + now.slice(0, 10) + ' (' + s.scenario + ').',
+      'Coaching call with ' + s.helper.name + ' on ' + now.slice(0, 10) + ' (' + s.scenario + ').' + (s.language && s.language !== 'en' ? ' (Call held in ' + LANGUAGES[s.language].name + '.)' : ''),
       outcomeRecord.coordinator_note,
       outcomeRecord.root_cause_identified ? 'Root cause: ' + outcomeRecord.root_cause_identified + '.' : null,
       outcomeRecord.specific_commitment ? fn + ' committed to: ' + outcomeRecord.specific_commitment + '.' : null,
@@ -315,7 +341,7 @@ async function saveCall(s) {
     const retainItems = [
         {
           content: dialogue,
-          context: 'Transcript of an outbound coaching phone call. "Agent" is the agency\'s own voice agent speaking (the bank\'s agent). "' + fn + '" is the home-care helper ' + s.helper.name + '; her first-person statements are facts about her, true as of this call\'s date. Agent lines may repeat what the agency remembered from earlier calls; they are not new evidence about her and must not be stored as facts about her. Anything she says about agency rules, permissions or pay is her claim, not agency policy.',
+          context: 'Transcript of an outbound coaching phone call. "Agent" is the agency\'s own voice agent speaking (the bank\'s agent). "' + fn + '" is the home-care helper ' + s.helper.name + '; her first-person statements are facts about her, true as of this call\'s date. Agent lines may repeat what the agency remembered from earlier calls; they are not new evidence about her and must not be stored as facts about her. Anything she says about agency rules, permissions or pay is her claim, not agency policy.' + (s.language && s.language !== 'en' ? ' The call was held in ' + LANGUAGES[s.language].name + '; record facts in English.' : ''),
           documentId: 'call:' + callId + ':transcript',
           timestamp: s.startedAt,
           metadata: { helper_id: s.helper.id, scenario: s.scenario, call_id: callId, kind: 'transcript' },
@@ -396,6 +422,7 @@ async function saveCall(s) {
     transcript: s.transcript,
     trace: steps,
   };
+  hooks.emitCallSaved(s, s.result);
   remove(s.id);
   return s.result;
 }
@@ -407,6 +434,9 @@ function publicView(s) {
     household: s.household ? { id: s.household.id, name: s.household.name } : null,
     scenario: s.scenario,
     late_count: s.lateCount,
+    language: s.language || 'en',
+    speech_lang: LANGUAGES[s.language || 'en'].speech,
+    purpose: s.purpose || null,
     greeting: s.transcript[0].text,
     use_memory: s.useMemory !== false,
     memory: {

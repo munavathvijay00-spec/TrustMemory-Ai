@@ -193,7 +193,8 @@ function pageHouseholdDetail(id){
         <button class="btn sm" id="checkinBtn">Ring the placed helper for a check-in</button>
       </div>
     </div>
-  </div>`;
+  </div>
+  ${typeof careHouseholdPanel === 'function' ? careHouseholdPanel(hh.id) : ''}`;
 }
 
 function handleAddHouseholdMemory(event, householdId){
@@ -204,6 +205,7 @@ function handleAddHouseholdMemory(event, householdId){
 function wireHouseholds(){}
 
 function wireHouseholdDetail(id){
+  if(typeof careWireHousehold === 'function') careWireHousehold(id);
   const b1 = document.getElementById('runReflectBtn');
   const b2 = document.getElementById('runReflectBtn2');
   [b1, b2].forEach(b => {

@@ -185,7 +185,37 @@ async function renderRailStatus(){
   }
 }
 
+/** Sidebar, first page and data sync, once the signed-in role is known. */
+function startConsole(){
+  const admin = CURRENT_USER.role === 'admin';
+  if(!admin){
+    route = {page: homePageFor(), param: null};
+    if(typeof writeHash === 'function') writeHash(route.page, null);
+  }
+  // Helpers and households get a plain sidebar: no reload button, no service status.
+  const resetBtn = document.getElementById('resetBtn');
+  if(resetBtn && resetBtn.style) resetBtn.style.display = admin ? '' : 'none';
+
+  recalcAll();
+  renderAuthRail();
+  buildNav();
+  highlightNav();
+  renderCurrentPage();
+  if(!admin) return;
+
+  // Sync real state from SQLite database
+  syncBackendData();
+  renderRailStatus();
+  setInterval(renderRailStatus, 30000);
+
+  log('mem','MEMORY AGENT', 'System initialized. Institutional memory loaded for helpers and households.');
+}
+
+let APP_STARTED = false;
+
 function initApp(){
+  if(APP_STARTED) return;
+  APP_STARTED = true;
   const resetBtn = document.getElementById('resetBtn');
   if(resetBtn){
     resetBtn.onclick = resetDemo;
@@ -199,18 +229,18 @@ function initApp(){
     if(r && (r.page !== route.page || String(r.param || '') !== String(route.param || ''))) nav(r.page, r.param, {fromHash: true});
   });
 
-  recalcAll();
-  renderAuthRail();
-  buildNav();
-  highlightNav();
-  renderCurrentPage();
-
-  // Sync real state from SQLite database
-  syncBackendData();
-  renderRailStatus();
-  setInterval(renderRailStatus, 30000);
-
-  log('mem','MEMORY AGENT', 'System initialized. Institutional memory loaded for helpers and households.');
+  // Who is signed in decides everything else: the sign-in screen, "waiting for approval",
+  // or the console for that role. If the server cannot be reached, show the coordinator view.
+  const content = document.getElementById('content');
+  if(content) content.innerHTML = '<div class="empty"><p>Loading…</p></div>';
+  authBoot().then(state => {
+    // Unreachable server: say so and retry. (The offline smoke test opts into the console view.)
+    if(state === 'offline' && !window.TM_OFFLINE_CONSOLE) return showOfflineScreen();
+    if(state === 'gate') return showAuthGate('login');
+    if(state === 'pending') return showPendingScreen();
+    authLock(false);
+    startConsole();
+  }).catch(err => console.warn('Start-up note:', err && err.message));
 }
 
 document.addEventListener('DOMContentLoaded', initApp);

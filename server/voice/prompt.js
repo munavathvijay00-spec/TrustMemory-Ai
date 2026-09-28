@@ -1,5 +1,6 @@
 /** The persona system prompt for a call, built from recalled memory, prior calls and the commitment ledger. */
-const { END_TOKEN, firstName, daysBetween } = require('./util');
+const { END_TOKEN, LANGUAGES, firstName, daysBetween } = require('./util');
+const { APPROACHES } = require('../commitments');
 
 const SCENARIO_GOALS = {
   coaching_call:
@@ -12,7 +13,21 @@ const SCENARIO_GOALS = {
     'Reason for the call: the two-week follow-up you promised on the last call. Goal: ask specifically whether the commitment from that call held, thank her if it did, understand what got in the way if it did not, and agree what happens next.',
 };
 
-function buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls, ledger }) {
+/** How the agent speaks in each call language. The memory, tags and rules stay in English. */
+const LANGUAGE_RULES = {
+  hi: name => [
+    'LANGUAGE: speak ONLY natural spoken Hindi, written in Devanagari script (names too), the way a warm Hyderabad agency coordinator talks to a domestic worker: simple everyday words, short sentences. Keep common English words people mix in when speaking (salary, bus, school, time, problem, okay). Never switch to English sentences.',
+    'Address her respectfully as "' + name + ' ji" and use "aap". A natural opening is "Namaste ' + name + ' ji", written in Devanagari.',
+    'The memory above is written in English: say it in Hindi. Keep the citation tags exactly as [m1], [m2] in Latin letters, and keep ' + END_TOKEN + ' exactly as written.',
+  ],
+  te: name => [
+    'LANGUAGE: speak ONLY natural spoken Telugu, written in Telugu script (names too), the way a warm Hyderabad agency coordinator talks to a domestic worker: simple everyday words, short sentences. Keep common English words people mix in when speaking (salary, bus, school, time, problem, okay). Never switch to English sentences.',
+    'Address her respectfully as "' + name + ' garu" and use "meeru". A natural opening is "Namaskaram ' + name + ' garu", written in Telugu script.',
+    'The memory above is written in English: say it in Telugu. Keep the citation tags exactly as [m1], [m2] in Latin letters, and keep ' + END_TOKEN + ' exactly as written.',
+  ],
+};
+
+function buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls, ledger, language = 'en', purpose = null }) {
   // Keep the prompt lean: every turn resends it, and the free tier meters tokens per minute.
   const trimmed = memory.facts.slice(0, 11).map((f, i) => {
     const text = String(f.text).split(' | ')[0].trim(); // drop Hindsight's "| When: ... | Involving: ..." suffix
@@ -48,12 +63,18 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     ledger.works.best
       ? '\nWHAT WORKS WITH ' + firstName(helper.name).toUpperCase() + ' (learned from outcomes, not opinion): when the agency chose to ' + ledger.works.best.description + ', she kept ' + ledger.works.best.kept + ' of ' + (ledger.works.best.kept + ledger.works.best.broken) + ' commitments. Use that approach on this call.'
       : '',
+    // Agency-wide prior for a helper with no track record of her own (learned across helpers).
+    !ledger.works.best && ledger.works.prior && ledger.works.prior.approach && ledger.works.prior.total
+      ? '\nACROSS THE AGENCY: for ' + String(ledger.works.prior.problem_type || 'similar').replace(/_/g, ' ') + ' problems, when the agency chose to ' + (ledger.works.prior.description || APPROACHES[ledger.works.prior.approach] || String(ledger.works.prior.approach).replace(/_/g, ' ')) + ', helpers kept their promise ' + ledger.works.prior.kept + ' of ' + ledger.works.prior.total + ' times. With no track record of her own yet, start with that approach.'
+      : '',
     ledger.works.avoid.length
       ? '\nAVOID with her: ' + ledger.works.avoid.map(a => a.description + ' (' + a.broken + ' broken, ' + a.kept + ' kept)').join('; ') + '.'
       : '',
   ].filter(Boolean).join('\n');
 
   const goal = (SCENARIO_GOALS[scenario] || SCENARIO_GOALS.coaching_call).replace('{{late_count}}', String(lateCount));
+  const purposeLine = purpose ? 'Why the agency is calling today: ' + purpose + ' Make this the reason you give for calling.' : '';
+  const langRules = LANGUAGE_RULES[language] ? LANGUAGE_RULES[language](firstName(helper.name)) : [];
   const helperUpper = helper.name.toUpperCase();
   const firstUpper = firstName(helper.name).toUpperCase();
 
@@ -64,6 +85,7 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     'HOUSEHOLD: ' + (household ? household.name : 'not currently placed'),
     'SCENARIO: ' + scenario,
     goal,
+    ...(purposeLine ? [purposeLine] : []),
     '',
     'WHAT YOU REMEMBER ABOUT ' + helperUpper + ' (from the agency\'s Hindsight memory, source: ' + memory.source + '):',
     memLines,
@@ -98,14 +120,14 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     'STYLE RULES:',
     '- Introduce yourself only as calling from the agency. Do not invent a personal name for yourself.',
     '- Do not invent specifics that are not in the context or memory above: no made-up times, dates, minutes, amounts or household details. Say "a couple of late arrivals" rather than guessing how late.',
-    '- Speak plain Indian English as it would be spoken aloud. Short sentences. At most two sentences per turn, one question at a time.',
+    (language === 'en' ? '- Speak plain Indian English as it would be spoken aloud.' : '- Speak ' + LANGUAGES[language].name + ' as it would be spoken aloud (see LANGUAGE below).') + ' Short sentences. At most two sentences per turn, one question at a time.',
     '- Each reply must build on her last sentence. First acknowledge specifically what she said (not a generic "I understand"), then one natural next thing.',
     "- You speak ONLY the agent's side. After you ask a question, STOP and wait for the helper to answer. Never write the helper's reply, never continue the conversation on her behalf, never write lines like 'Yes, I will'.",
     '- No bullet points, no lists, no emojis, no markdown. This is spoken out loud by a text-to-speech voice.',
     '- Never state trust or churn scores. You record what happened; another agent scores it.',
     '- What the helper says about agency rules, permissions or pay is her claim, not agency policy. Do not agree to change a rule or grant a permission on the call; say the coordinator will look into it.',
     '- Only when the call is truly over, meaning you have said goodbye after step 7, or the helper has clearly said she cannot talk now and you have agreed a callback time, end that final message with the exact text ' + END_TOKEN + '. Never use it while the helper is still upset, still talking, or has not answered your question. If the helper is angry or wants to quit, stay on the call, listen, and ask what happened.',
-  ].join('\n');
+  ].concat(langRules.length ? [''].concat(langRules) : []).join('\n');
 }
 
-module.exports = { SCENARIO_GOALS, buildSystemPrompt };
+module.exports = { SCENARIO_GOALS, LANGUAGE_RULES, buildSystemPrompt };

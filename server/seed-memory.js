@@ -198,7 +198,32 @@ function buildItems() {
       });
     });
   }
+  // Feature seeds (safety history, festival travel) live next to their features in server/seed/.
+  for (const extra of extraSeedItems()) items.push(extra);
   return items;
+}
+
+/** Items from server/seed/*-seed.js: either ready retain items or {text, d, helper|household, ctx}. */
+function extraSeedItems() {
+  const out = [];
+  for (const name of ['care-seed', 'outreach-seed']) {
+    let mod;
+    try { mod = require('./seed/' + name); } catch { continue; }
+    (mod.HINDSIGHT_SEED_ITEMS || []).forEach((it, i) => {
+      if (it.content) { out.push(Object.assign({ timestamp: new Date().toISOString() }, it, { documentId: it.documentId || `seed:${name}:${i + 1}` })); return; }
+      const kind = it.helper ? 'helper' : 'household';
+      const id = it.helper || it.household;
+      out.push({
+        content: it.text,
+        context: it.context || (kind === 'helper' ? CTX.helperSaid(HELPERS[id] ? HELPERS[id].name : id) : CTX.householdProfile),
+        documentId: `seed:${name}:${i + 1}`,
+        timestamp: typeof it.d === 'number' ? daysAgo(it.d) : (it.timestamp || new Date().toISOString()),
+        metadata: { [kind + '_id']: id, kind: it.ctx || 'feature-seed', source: 'seed-history' },
+        tags: [`${kind}:${id}`, 'source:seed-history', ...(it.tags || [])],
+      });
+    });
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ main */

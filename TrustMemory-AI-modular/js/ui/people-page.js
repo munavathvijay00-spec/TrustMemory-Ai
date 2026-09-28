@@ -14,6 +14,7 @@ function pagePeople(tab){
       ${tabBtn('helpers', 'Helpers', S.helpers.length)}
       ${tabBtn('households', 'Households', S.households.length)}
     </div>
+    ${typeof authPendingBlock === 'function' ? authPendingBlock() : ''}
     ${body}`;
 }
 

@@ -2,7 +2,8 @@
    ui/render.js — router: nav(), renderCurrentPage(), highlightNav(), role guards
    ========================================================================= */
 
-const ROUTABLE = ['dashboard', 'people', 'helpers', 'households', 'helperDetail', 'householdDetail', 'memory', 'matching', 'voice', 'activity'];
+const ROUTABLE = ['dashboard', 'people', 'helpers', 'households', 'helperDetail', 'householdDetail', 'memory', 'matching', 'voice', 'activity', 'helperHome', 'householdHome'];
+const ADMIN_ONLY = ['dashboard', 'people', 'helpers', 'households', 'helperDetail', 'householdDetail', 'memory', 'matching', 'voice', 'activity'];
 
 /** #/page or #/page/param -> {page, param}; null when the hash is empty or unknown. */
 function routeFromHash(){
@@ -19,29 +20,17 @@ function writeHash(page, param){
 }
 
 function nav(page, param, opts){
-  // Check authentication gate
+  // Signed out: the sign-in screen. Helpers and households only ever see their own home page.
   if(!CURRENT_USER || !CURRENT_USER.isLoggedIn){
     showAuthGate();
     return;
   }
-
-  // Role-based route enforcement
-  if(CURRENT_USER.role === 'helper'){
-    // Workers can only see their own profile, memory timeline, and settings
-    if(page === 'helperDetail'){
-      param = CURRENT_USER.entityId;
-    } else {
-      page = 'helperDetail';
-      param = CURRENT_USER.entityId;
-    }
-  } else if(CURRENT_USER.role === 'household'){
-    // Residencies can only see their own residence profile, placement history, and settings
-    if(page === 'householdDetail'){
-      param = CURRENT_USER.entityId;
-    } else {
-      page = 'householdDetail';
-      param = CURRENT_USER.entityId;
-    }
+  if(CURRENT_USER.role !== 'admin'){
+    const home = homePageFor();
+    // A typed or bookmarked coordinator URL: show the home page and correct the address bar too.
+    if(page !== home && opts && opts.fromHash && typeof history !== 'undefined' && history.replaceState) history.replaceState(null, '', '#/' + home);
+    page = home;
+    param = null;
   }
 
   if(page === 'dashboard' && typeof dashData !== 'undefined') dashData = null; // fresh numbers on every visit
@@ -58,22 +47,20 @@ function renderCurrentPage(){
 
   if(!CURRENT_USER || !CURRENT_USER.isLoggedIn){
     showAuthGate();
-    c.innerHTML = `
-      <div class="empty">
-        <h3>Authentication Required</h3>
-        <p>Please sign in or create an account to access TrustMemory AI.</p>
-        <button class="btn brass" style="margin-top:14px;" onclick="showAuthGate()">Open Sign In Gate</button>
-      </div>
-    `;
+    return;
+  }
+  // A helper or household that lands on a coordinator page (old link, typed hash) goes home.
+  if(CURRENT_USER.role !== 'admin' && ADMIN_ONLY.includes(route.page)){
+    nav(homePageFor());
+    return;
+  }
+  if(CURRENT_USER.role === 'admin' && (route.page === 'helperHome' || route.page === 'householdHome')){
+    nav('dashboard');
     return;
   }
 
   switch(route.page){
     case 'dashboard':
-      if(CURRENT_USER.role !== 'admin'){
-        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
-        return;
-      }
       c.innerHTML = pageDashboard();
       if(typeof wireDashboard === 'function') wireDashboard();
       break;
@@ -81,24 +68,18 @@ function renderCurrentPage(){
     case 'people':
     case 'helpers':
     case 'households':
-      if(CURRENT_USER.role !== 'admin'){
-        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
-        return;
-      }
       c.innerHTML = pagePeople(route.page === 'households' ? 'households' : (route.page === 'helpers' ? 'helpers' : (route.param || peopleTab)));
       if(typeof wirePeople === 'function') wirePeople();
       break;
 
     case 'helperDetail':
-      // If helper role, always lock to their own ID
-      const targetHelperId = (CURRENT_USER.role === 'helper') ? CURRENT_USER.entityId : (route.param || 'anita');
+      const targetHelperId = route.param || 'anita';
       c.innerHTML = pageHelperDetail(targetHelperId);
       if(typeof wireHelperDetail === 'function') wireHelperDetail(targetHelperId);
       break;
 
     case 'householdDetail':
-      // If household role, always lock to their own ID
-      const targetHouseholdId = (CURRENT_USER.role === 'household') ? CURRENT_USER.entityId : (route.param || 'h101');
+      const targetHouseholdId = route.param || 'h101';
       c.innerHTML = pageHouseholdDetail(targetHouseholdId);
       if(typeof wireHouseholdDetail === 'function') wireHouseholdDetail(targetHouseholdId);
       break;
@@ -110,34 +91,32 @@ function renderCurrentPage(){
       break;
 
     case 'matching':
-      if(CURRENT_USER.role !== 'admin'){
-        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
-        return;
-      }
       c.innerHTML = pageMatching();
       if(typeof wireMatching === 'function') wireMatching();
       break;
 
 
     case 'voice':
-      if(CURRENT_USER.role !== 'admin'){
-        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
-        return;
-      }
       c.innerHTML = pageVoice();
       if(typeof wireVoice === 'function') wireVoice();
       break;
 
     case 'activity':
-      if(CURRENT_USER.role !== 'admin'){
-        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
-        return;
-      }
       c.innerHTML = pageActivity();
       break;
 
 
 
+
+    case 'helperHome':
+      c.innerHTML = pageHelperHome();
+      if(typeof wireHelperHome === 'function') wireHelperHome();
+      break;
+
+    case 'householdHome':
+      c.innerHTML = pageHouseholdHome();
+      if(typeof wireHouseholdHome === 'function') wireHouseholdHome();
+      break;
 
     default:
       c.innerHTML = '<div class="empty">Not found.</div>';
@@ -164,17 +143,6 @@ function buildNav(){
   el.innerHTML = currentNav.map(n => `<button data-id="${n.id}"><span class="dot"></span>${n.label}</button>`).join('');
 
   el.querySelectorAll('button').forEach((b, i) => {
-    b.onclick = () => {
-      const item = currentNav[i];
-      if(item.id === 'helperDetail'){
-        nav('helperDetail', CURRENT_USER.entityId);
-      } else if(item.id === 'householdDetail'){
-        nav('householdDetail', CURRENT_USER.entityId);
-      } else if(item.id === 'memory' && CURRENT_USER.role === 'helper'){
-        nav('memory', CURRENT_USER.entityId);
-      } else {
-        nav(item.id, null);
-      }
-    };
+    b.onclick = () => nav(currentNav[i].id, null);
   });
 }

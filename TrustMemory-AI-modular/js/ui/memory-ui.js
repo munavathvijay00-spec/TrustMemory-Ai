@@ -63,6 +63,25 @@ async function memuiLoadObservations(kind, id){
 
 /* ------------------------------------------------------------------ standing profile (mental model) */
 
+/** Small, safe Markdown for Hindsight's standing profiles: escape first, then headings, bold, bullets. */
+function memuiMarkdown(text){
+  const inline = t => t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|\s)\*(\S.*?\S)\*(?=\s|$)/g, '$1<i>$2</i>');
+  const out = [];
+  let list = null;
+  const close = () => { if(list){ out.push('</ul>'); list = null; } };
+  for(const raw of escapeHtml(String(text || '')).split(/\r?\n/)){
+    const line = raw.trimEnd();
+    const h = line.match(/^\s*(#{1,4})\s+(.*)$/);
+    const li = line.match(/^(\s*)[*-]\s+(.*)$/);
+    if(h){ close(); out.push(`<div class="mm-h${Math.min(h[1].length, 3)}">${inline(h[2])}</div>`); }
+    else if(li){ if(!list){ out.push('<ul>'); list = true; } out.push(`<li class="${li[1].length >= 2 ? 'sub' : ''}">${inline(li[2])}</li>`); }
+    else if(!line.trim()){ close(); }
+    else { close(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  close();
+  return out.join('');
+}
+
 function renderMentalModelBlock(kind, id){
   const key = memuiKey('mm', kind, id);
   const st = MEMUI.cache[key];
@@ -72,7 +91,7 @@ function renderMentalModelBlock(kind, id){
   if(cur.status === 'loading') body = `<div style="font-size:12.5px; color:var(--ink-soft);">Reading the standing profile…</div>`;
   else if(cur.status === 'error') body = `<div style="font-size:12.5px; color:var(--rust);">${escapeHtml(cur.error)}</div>`;
   else if(!cur.content) body = `<div style="font-size:12.5px; color:var(--ink-soft);">Not written yet. Hindsight writes this page once enough memories exist, and rewrites it as new calls are retained.</div>`;
-  else body = `<div style="font-size:12.5px; line-height:1.6; white-space:pre-wrap;">${escapeHtml(cur.content)}</div>${cur.updated_at ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:6px;">Last rewritten by Hindsight: ${escapeHtml(memuiDate(cur.updated_at))}</div>` : ''}`;
+  else body = `<div class="mm-body">${memuiMarkdown(cur.content)}</div>${cur.updated_at ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:6px;">Last rewritten by Hindsight: ${escapeHtml(memuiDate(cur.updated_at))}</div>` : ''}`;
   return `<div class="card" style="border-left:3px solid var(--teal);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
       <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--ink-soft);">${escapeHtml(cur.name || (kind === 'helper' ? 'How to coach this helper' : 'What this household expects'))}</div>

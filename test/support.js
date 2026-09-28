@@ -5,12 +5,14 @@
  * - TRUSTMEMORY_DB=:memory: so tests never touch trustmemory.db
  * - Groq and Hindsight keys forced empty (dotenv never overrides a variable that is set),
  *   so a developer's .env cannot make the tests call real services
+ * - TRUSTMEMORY_AUTH=off so API tests need no sign-in (test/auth.test.js builds an app with auth on)
  * - global fetch replaced with a stub that fails loudly if anything tries the network
  */
 const http = require('http');
 
 process.env.TRUSTMEMORY_DB = ':memory:';
 process.env.TRUSTMEMORY_LOG = 'off';
+process.env.TRUSTMEMORY_AUTH = 'off'; // no sign-in in tests; test/auth.test.js turns it on for its own app
 for (const k of ['GROQ_API_KEYS', 'GROQ_API_KEY', 'HINDSIGHT_API_KEY', 'HINDSIGHT_API_URL', 'HINDSIGHT_BANK_ID']) process.env[k] = '';
 
 global.fetch = async (url) => { throw new Error('Network disabled in tests: ' + url); };

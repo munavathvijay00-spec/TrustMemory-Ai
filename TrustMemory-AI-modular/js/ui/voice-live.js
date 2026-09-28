@@ -63,7 +63,10 @@ function lvReadForm(){
   const lateCount = parseInt(document.getElementById('vLateCount')?.value || '2', 10);
   const scenario = document.getElementById('vScenarioType')?.value || 'coaching_call';
   const helper = S.helpers.find(h => h.id === helperId) || {name:'Helper'};
-  return {helperId, lateCount: Number.isFinite(lateCount) ? lateCount : 2, scenario, helper};
+  const VF = window.VOICE_FORM || {};
+  const language = document.getElementById('vLanguage')?.value || VF.language || 'en';
+  const purpose = String(document.getElementById('vPurpose')?.value ?? VF.purpose ?? '').trim().slice(0, 300);
+  return {helperId, lateCount: Number.isFinite(lateCount) ? lateCount : 2, scenario, helper, language, purpose};
 }
 
 function lvToggleMemory(on){
@@ -98,6 +101,7 @@ async function startLiveVoiceSession(opts){
 
   window.LIVE_VOICE = {
     status:'connecting', sessionId:null, helperId: f.helperId, helperName: f.helper.name, scenario: f.scenario, lateCount: f.lateCount,
+    language: f.language, purpose: f.purpose || null, trace: [],
     useMemory, transcript:[], memory:null, priorCalls:[], result:null, error:null, interim:'', hint:'',
     ending:false,
     feedback:null, proposal:null, proposalStatus:null, openFact:null,
@@ -108,16 +112,20 @@ async function startLiveVoiceSession(opts){
   try {
     const res = await fetch('/api/voice/session', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({helper_id: f.helperId, scenario: f.scenario, late_count: f.lateCount, use_memory: useMemory})
+      body: JSON.stringify({helper_id: f.helperId, scenario: f.scenario, late_count: f.lateCount, use_memory: useMemory, language: f.language, purpose: f.purpose || undefined})
     });
     const data = await res.json();
     if(!res.ok) throw new Error(data.error || 'Could not start the voice session.');
     if(myToken !== lvStartToken || !window.LIVE_VOICE) return;
 
     window.LIVE_VOICE.sessionId = data.session_id;
+    window.LIVE_VOICE.trace = data.trace || [];
+    // The reason belongs to this call only; the next call starts without it.
+    if(window.VOICE_FORM) window.VOICE_FORM.purpose = '';
     window.LIVE_VOICE.memory = data.memory;
     window.LIVE_VOICE.priorCalls = data.prior_calls || [];
     window.LIVE_VOICE.transcript.push({who:'agent', text:data.greeting, cited: []});
+    window.LIVE_VOICE.purpose = data.purpose || window.LIVE_VOICE.purpose;
     log('voice', 'VOICE AGENT', useMemory
       ? `Live call started with ${f.helper.name}. Recalled ${data.memory.count} memories from ${data.memory.source}${data.memory.mental_model ? ' plus the standing profile' : ''}.`
       : `Live call started with ${f.helper.name} with memory switched OFF (comparison run).`);
@@ -167,9 +175,10 @@ async function lvMirrorTick(){
   if(lvState() !== s) return;
   const helperFirst = s.helperName.split(' ')[0];
   s.transcript = (d.transcript || []).map(t => t.who === 'Agent'
-    ? {who:'agent', text:t.text, cited: t.cited || []}
+    ? {who:'agent', text:t.text, cited: t.cited || [], latency: t.latency || null}
     : {who:'helper', text:t.text, recalled: t.recalled || []});
   if(d.memory){ s.memory = d.memory; }
+  s.trace = d.trace || s.trace || [];
   s.callState = d.call_state;
   const sig = [d.call_state, s.transcript.length, (s.memory && s.memory.facts.length) || 0].join('|');
   const changed = sig !== lvMirrorSig;
@@ -376,6 +385,7 @@ async function lvFollowRetain(s){
       const ret = d.result && d.result.retain;
       if(ret && ret.status !== 'saving'){
         s.result.retain = ret;
+        if(d.result.trace) s.result.trace = d.result.trace;
         log('mem', 'MEMORY AGENT', ret.status === 'ok' ? `Retained the call to Hindsight bank ${ret.bank}.` : ret.detail);
         lvRender();
         return;
@@ -567,7 +577,40 @@ function lvTagChip(s, tag){
   return `<button onclick="lvOpenFact('${tag}')" title="${title}" style="font-family:var(--font-mono); font-size:10px; font-weight:700; color:#8F6A2E; background:#F3E8D6; border:1px solid #E0CFAE; border-radius:3px; padding:0 5px; margin-left:4px; cursor:pointer; vertical-align:middle;">${tag}</button>`;
 }
 
-function lvAgentBubble(s, t){
+/* ------------------------------------------------------------------ step timings */
+
+function lvMs(ms){
+  if(ms == null) return '–';
+  return ms >= 1000 ? (ms / 1000).toFixed(1) + ' s' : Math.round(ms) + ' ms';
+}
+
+/** One small line under an agent reply: how long memory recall and the LLM took for it. */
+function lvLatencyStrip(t, first){
+  const l = t.latency;
+  if(!l || l.llm_ms == null) return '';
+  const parts = [];
+  if(l.recall_ms != null) parts.push((first ? 'recall ' : 'recall on her words ') + lvMs(l.recall_ms) + (l.recall_ok === false ? ' (failed)' : ''));
+  parts.push('LLM ' + lvMs(l.llm_ms));
+  if(l.attribution_ms) parts.push('citations ' + lvMs(l.attribution_ms));
+  parts.push('total ' + lvMs(l.total_ms));
+  return `<div title="Latency for this reply" style="font-size:10.5px; color:#8A93A0; margin-top:2px; font-family:var(--font-mono);">⏱ ${parts.map(escapeHtml).join(' · ')}</div>`;
+}
+
+/** After the call: how long each save step took and whether it worked. */
+function lvCompletionSteps(r){
+  const steps = (r && r.trace) || [];
+  if(!steps.length) return '';
+  const label = {extract:'Extract outcome', save_local:'Save call', decision:'Decision Agent', retain:'Retain to Hindsight'};
+  const chips = steps.filter(e => label[e.step]).map(e => {
+    const skipped = /^skipped/.test(e.detail || '');
+    const mark = skipped ? 'skipped' : e.ok ? '✓' : 'failed';
+    return `<span class="badge ${skipped ? 'neutral' : e.ok ? 'ok' : 'bad'}" title="${escapeHtml(e.detail || '')}">${escapeHtml(label[e.step])} · ${skipped ? mark : lvMs(e.ms) + ' ' + mark}</span>`;
+  });
+  if(r.retain && r.retain.status === 'saving' && !steps.some(e => e.step === 'retain')) chips.push('<span class="badge warn">Retain to Hindsight · running…</span>');
+  return `<div style="margin-top:10px;"><div style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:#5B6572; margin-bottom:4px;">Step timings</div><div style="display:flex; gap:6px; flex-wrap:wrap; font-size:11px;">${chips.join('')}</div></div>`;
+}
+
+function lvAgentBubble(s, t, first){
   const cited = t.cited || [];
   const isMem = cited.length > 0;
   return `<div style="display:flex; flex-direction:column; align-items:flex-start;">
@@ -575,6 +618,7 @@ function lvAgentBubble(s, t){
     <div style="max-width:88%; background:${isMem ? '#FFF6E5' : '#FFFDF8'}; border:1px solid ${isMem ? '#E6C98F' : '#E8DEC8'}; ${isMem ? 'box-shadow: inset 3px 0 0 #B4863F;' : ''} border-radius:6px; padding:8px 12px; font-size:13px; line-height:1.5;">
       ${escapeHtml(t.text)}${cited.map(tag => lvTagChip(s, tag)).join('')}
     </div>
+    ${lvLatencyStrip(t, first)}
   </div>`;
 }
 
@@ -724,6 +768,7 @@ function lvResultPanel(s){
       </div>
       ${r.decision && r.decision.reasons && r.decision.reasons.length ? `<div style="font-size:11.5px; color:#5B6572; margin-top:4px;">Because: ${escapeHtml(r.decision.reasons.join('; '))}</div>` : ''}
       ${r.retain.status !== 'ok' ? `<div style="font-size:11px; color:#5B6572; margin-top:6px;">${escapeHtml(r.retain.detail)}</div>` : ''}
+      ${lvCompletionSteps(r)}
       ${fbHtml}
       ${propHtml}
       <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center;">
@@ -738,7 +783,8 @@ function renderLiveVoiceConsole(){
   const s = lvState();
   if(!s) return '';
 
-  const transcriptHtml = s.transcript.map(t => t.who === 'agent' ? lvAgentBubble(s, t) : lvHelperBubble(s, t)).join('');
+  const transcriptHtml = s.transcript.map((t, i) => t.who === 'agent' ? lvAgentBubble(s, t, i === 0) : lvHelperBubble(s, t)).join('');
+  const langName = {hi:'Hindi', te:'Telugu'}[s.language];
   const interimHtml = (s.status === 'listening')
     ? `<div style="display:flex; justify-content:flex-end;"><div id="lvInterim" style="max-width:85%; font-size:12.5px; color:#5B6572; font-style:italic; padding:4px 12px;">${escapeHtml(s.interim || '…')}</div></div>`
     : '';
@@ -759,7 +805,9 @@ function renderLiveVoiceConsole(){
             <span>🎙️ Live voice call · ${escapeHtml(s.helperName)}</span>
             ${lvStatusBadge(s.status)}
             <span class="badge ${memoryOn ? 'ok' : 'bad'}">${memoryOn ? 'memory ON' : 'memory OFF'}</span>
+            ${langName ? `<span class="badge neutral">in ${langName}</span>` : ''}
           </div>
+          ${s.purpose ? `<div style="font-size:12px; color:var(--ink); margin-top:4px;"><b>Why we are calling:</b> ${escapeHtml(s.purpose)}</div>` : ''}
           <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">
             On the helper\'s phone screen · brain: Groq · memory: Hindsight recall before the first word and on every turn, retain after the call · scenario: ${escapeHtml(s.scenario)}
           </div>

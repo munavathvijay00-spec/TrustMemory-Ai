@@ -14,6 +14,12 @@ Indian home-care agencies place helpers (elder care, child care, cooking, cleani
 6. **Standing profile refresh.** Hindsight consolidates the new facts into observations and rewrites the helper's standing profile. The console shows the profile before and after, and can force a rewrite. (`/api/memory/mental-model`, `/api/memory/mental-model/refresh`)
 7. **The next call improves.** The follow-up call recalls the commitment she made and asks whether it held. The console shows **Learned from this call** next to **Already knew and used** so you can see the loop close.
 8. **Commitment ledger: learning what works.** Every promise is recorded with the coaching approach the agent used when she made it (reassure first, listen first, straight to a fix, firm reminder). The next call asks about the open promise; the extraction marks it kept or broken from her own words, the Decision Agent moves churn with a named reason, and the outcome plus the approach that preceded it are retained to Hindsight. Before each call the agent is told which approach has actually led to kept promises with this helper, and which to avoid. (`server/commitments.js`, `/api/memory/commitments`)
+9. **Safety signals across calls.** A helper rarely says "I am being mistreated" in one call; she mentions late pay, long hours or not being allowed out in pieces over weeks. Extraction records only what she said herself; when the same concern comes up on 2+ calls within 60 days (or once for harm or confinement), the coordinator gets a private flag with her dated words, and Hindsight reflect writes a neutral summary across her calls. It is a flag for a human to check, never shown to the household. (`server/care.js`)
+10. **Handover brief for the next helper.** When a placement changes, the household's memory (reflect scoped to `household:<id>` plus its standing profile) becomes a briefing for the replacement: routine, health and care, preferences, what went wrong before and first-week tips, in English, Hindi or Telugu, read aloud or shared on WhatsApp. It never names or blames earlier helpers. (`/api/care/handover/:id`)
+11. **Calling before problems.** "Today's calls" ranks who to ring and why, each reason dated and sourced: promises due, festival travel ahead (last Dussehra she came back 9 days late, recalled from memory), repeated salary-advance requests, time since the last call. "Ring with this reason" starts the call with that purpose in the agent's prompt. (`server/outreach.js`)
+12. **Learning across helpers.** Every promise carries the problem behind it (transport, family, pay, health...). The ledger aggregates which coaching approach kept promises for each problem type across the agency, retains that as agency-level memory, and gives a new helper with no history a starting point: "for transport problems, listening first led to kept promises 7 of 9 times".
+13. **Calls in Telugu, Hindi or English.** The agent speaks the helper's language (native script, natural mixed words); memory, extraction and retained facts stay in English, marked with the call language. The console shows per-reply latency (recall, LLM) and after-call step timings.
+14. **Three roles, one app.** Coordinators see everything. A helper signs in to her own view: what she agreed to, check-in dates and her calls, with no scores. A household sees its placement and can send feedback, which is retained to Hindsight with the household and helper tags. Helpers and households sign up and wait for coordinator approval.
 
 ## Architecture
 
@@ -65,7 +71,7 @@ The coordinator console and the helper phone screen share one server-side sessio
 | Retain | Call transcripts and summaries, coordinator notes, coordinator feedback, seeded history | `server/voice-agent.js` (`saveCall`), `server/memory-routes.js` (`/note`, `/feedback`), `server/seed-memory.js` |
 | Recall | Before the first word, on every turn, matching evidence, recall search in the Hindsight Core page | `server/voice-agent.js`, `server/memory-routes.js` (`/recall`, `/match`) |
 | Reflect | Coordinator brief, who to call today, directive suggestions (with JSON response schemas) | `server/memory-routes.js` (`/brief`, `/who-to-call`, `/suggest-directive`) |
-| Observations | Consolidated beliefs with their source facts on helper, household, insights and memory pages | `server/hindsight.js` (`observations`), `/api/memory/observations` |
+| Observations | Consolidated beliefs with their source facts on the helper, household and Hindsight Core pages | `server/hindsight.js` (`observations`), `/api/memory/observations` |
 | Mental models | Standing profile per helper (`coach-<id>`) and household (`household-<id>`), read before each call, shown before and after | `server/seed-memory.js` (`mentalModelSpecs`), `server/voice-agent.js`, `/api/memory/mental-model` |
 | Directives | Hard rules reflect must obey (no scores to helpers, respect call windows, helper claims are not policy) | `server/seed-memory.js` (`DIRECTIVES`), `/api/memory/directives` |
 | Tags | `helper:<id>`, `household:<id>`, `source:*`, `scenario:*`, `verdict:*` scope every recall and reflect | throughout `server/voice-agent.js`, `server/memory-routes.js` |
@@ -98,6 +104,8 @@ PORT=3000
 HOST=127.0.0.1
 ```
 
+**Sign in.** Three demo accounts are created on first start: `coordinator@trustmemory.demo`, `radha@trustmemory.demo` (helper) and `gupta@trustmemory.demo` (household). Set their passwords with `DEMO_COORDINATOR_PASSWORD`, `DEMO_HELPER_PASSWORD` and `DEMO_HOUSEHOLD_PASSWORD` in `.env`; if unset, random ones are generated and printed once in the server log. `TRUSTMEMORY_AUTH=off` disables sign-in for local development (the tests run that way).
+
 Open http://localhost:3000 for the coordinator console. Open the helper's phone screen from the Voice Agent page ("Open phone screen") or directly at http://localhost:3000/helper.html?helper=radha, click **Switch line on** once (browsers need a click before audio), then ring her from the console.
 
 `npm run seed:memory:dry` prints what would be retained without calling Hindsight. Observations and standing profiles consolidate in the background for a few minutes after seeding.
@@ -117,6 +125,14 @@ The image uses Node 22 with the built-in `node:sqlite` and listens on `0.0.0.0` 
 | GET | `/api/helpers`, `/api/households` | Roster with current trust, churn and difficulty |
 | POST | `/api/helpers`, `/api/households` | Register a helper or household (validated); saved in SQLite, profile retained to Hindsight and a standing mental model created |
 | GET | `/api/dashboard` | Every dashboard number from the server: counts, follow-ups due, escalations, alerts |
+| GET | `/api/outreach/today` | Who to ring today, ranked, each reason dated and sourced (ledger, agency records, Hindsight) |
+| GET | `/api/outreach/learning` | What works across the agency: kept rate by problem type and coaching approach |
+| GET | `/api/care/safety`, `/api/care/safety/:helperId` | Private safety flags with the helper's dated words |
+| POST | `/api/care/safety/:flagId/review` | Mark a flag reviewed with a note |
+| GET | `/api/care/handover/:householdId?helper=&lang=` | Handover brief for the next helper (en, hi, te) |
+| POST | `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout` · GET `/api/auth/me` | Accounts: scrypt-hashed passwords, HttpOnly session cookie, helpers and households start pending |
+| GET | `/api/auth/pending` · POST `/api/auth/approve/:id` | Coordinator approves new accounts |
+| GET | `/api/me`, `/api/me/helper`, `/api/me/household` · POST `/api/me/feedback` | The signed-in helper's or household's own view; household feedback is retained to Hindsight |
 | GET | `/api/memories/:helper_id` | Local memory ledger for a helper (World, Experience, Opinion, Observation) |
 | GET | `/api/calls` | Saved calls with transcript and extracted outcome |
 | GET | `/api/memory/commitments?helper=` | Commitment ledger: promises, kept rate, and which coaching approach works with the helper |
@@ -187,11 +203,19 @@ CI (`.github/workflows/test.yml`) runs `npm ci --ignore-scripts`, `npm run lint`
 ## Known limits
 
 - Speech recognition in Chrome and Edge is cloud-backed, so the phone screen needs internet to hear the helper. The typed reply box works without it.
-- The server listens on `127.0.0.1` only. There is no login, and the API reads helper memory. Set `HOST=0.0.0.0` only on a trusted network (for example to open the phone screen on a real phone). Over plain HTTP from another device the browser may block the microphone; use the typed reply box there.
-- One agency, one Hindsight bank. Call sessions live in server memory; a restart drops calls in progress (saved calls and queued retains survive in SQLite).
+- The server listens on `127.0.0.1` by default. Sign-in protects every API route by role, but it has no password reset or email verification yet. Set `HOST=0.0.0.0` only on a trusted network (for example to open the phone screen on a real phone). Over plain HTTP from another device the browser may block the microphone; use the typed reply box there.
+- One agency, one Hindsight bank.
+- Telugu speech output depends on the voices installed in the browser; without a Telugu voice the phone screen shows the text instead of speaking it.
 - Without `HINDSIGHT_API_KEY` the voice agent still runs on the local SQLite ledger, but observations, standing profiles, reflect and directives are unavailable (503).
 - Standing profiles are rewritten by Hindsight after consolidation, which can take a minute or two after a call. The console offers "Rewrite it now".
 - The Groq free tier is rate limited; the client rotates keys in `GROQ_API_KEYS` and falls back across models before failing.
+
+## Roadmap
+
+- **WhatsApp voice notes.** Most helpers already send voice notes to their agency. Transcribe them and retain them the same way as a call, so memory builds between calls too.
+- **Missed-call callback.** A helper gives a free missed call; the agent rings her back with her memory loaded. This is how many low-income workers in India reach services without spending on talk time.
+- **A real phone line.** The same session and relay code behind a telephony provider, so helpers without a smartphone are covered.
+- **Several agencies.** One Hindsight bank per agency, with the agency id carried in tags.
 
 ## Project layout
 
@@ -203,13 +227,20 @@ server/                  Express app, agents, Hindsight and Groq clients, SQLite
     recall.js            memory recall, de-dupe      prompt.js         persona system prompt
     citations.js         [mN] citations              extraction.js     outcome extraction
     session-store.js     sessions + SQLite restore   inflight.js       saves/retains in flight
-    trace.js, util.js    step timings, helpers
+    trace.js, util.js    step timings, languages   hooks.js          after-call hooks
   voice-routes.js        Voice Agent HTTP routes   commitments.js  commitment ledger
   hindsight.js           Hindsight REST client  memory-routes.js  memory, reflect, matching routes
   decision.js            Decision Agent         retain-queue.js   durable retain retries
   seed-memory.js         seeds the bank         db.js, sqlite-compat.js
+  care.js                safety signals, handover brief       care-routes.js
+  outreach.js            today's calls, agency learning       outreach-routes.js
+  auth.js                accounts, sessions, demo accounts    auth-routes.js  access rules, /api/me
+  people.js              validated helpers and households     seed/  feature seed history
   validate.js, rate-limit.js, health-routes.js, logger.js
 TrustMemory-AI-modular/  coordinator console (index.html) and helper phone screen (helper.html)
+  js/auth.js             sign-in, sign-up, pending accounts
+  js/ui/motion.js        page motion and the 3D memory constellation (css/motion.css)
+  js/ui/polish.js        icons, score rings, toasts
 test/                    node:test suites
 ```
 
