@@ -1,46 +1,35 @@
 /* =========================================================================
-   ui/insights-page.js — Reflection Agent output (Fact / Observation / Hypothesis)
+   ui/insights-page.js — what Hindsight has learned across the agency
+   (consolidated observations, read live from the bank; nothing simulated)
    ========================================================================= */
 
 function pageInsights(){
-  const hasReflections = S.reflections && S.reflections.length > 0;
-
-  if(!hasReflections){
-    return `
-      <div class="pagehead">
-        <div class="eyebrow">Insights</div>
-        <h1>What the Reflection Agent has found</h1>
-        <div class="lede">Every insight is labelled by how strongly the evidence supports it.</div>
-      </div>
-      <div class="card" style="padding:32px 24px; text-align:center; background:#fff; border:1px solid var(--line); border-radius:6px; margin-top:20px;">
-        <div style="font-size:24px; margin-bottom:8px;">💡</div>
-        <div style="font-size:14px; font-weight:600; color:var(--ink); margin-bottom:6px;">
-          No reflections run yet. Run Demo Mode, or trigger a reflection from a helper profile.
-        </div>
-        <div style="font-size:12px; color:var(--ink-soft); margin-top:12px;">
-          <button class="btn sm primary" onclick="nav('demo')" style="padding:6px 14px;">Open Demo Mode →</button>
-        </div>
-      </div>
-    `;
-  }
-
-  const groups = {
-    'Patterns discovered': S.reflections.filter(r => r.classification === 'OBSERVATION'),
-    'Root-cause hypotheses': S.reflections.filter(r => r.classification === 'HYPOTHESIS'),
-    'Confirmed facts': S.reflections.filter(r => r.classification === 'FACT'),
-  };
-
   return `
     <div class="pagehead">
       <div class="eyebrow">Insights</div>
-      <h1>What the Reflection Agent has found</h1>
-      <div class="lede">Every insight is labelled by how strongly the evidence supports it.</div>
+      <h1>What the agency has learned</h1>
+      <div class="lede">Hindsight consolidates every retained fact into observations: deduplicated beliefs that carry their evidence and are refined, not overwritten, when new calls contradict them.</div>
     </div>
-    ${Object.entries(groups).map(([title, items]) => `
-      <div class="section">
-        <h2>${title}</h2>
-        ${items.length ? items.map(reflCard).join('') : `<div class="card">${emptyState('Nothing here yet.', 'Run a reflection from a helper or household profile, or via Demo Mode.')}</div>`}
+    <div class="section">
+      ${typeof renderObservationsBlock === 'function' ? renderObservationsBlock(null, null, {title:'Across all helpers and households'}) : ''}
+    </div>
+    <div class="section">
+      <h2>By helper</h2>
+      <div class="grid g2">
+        ${S.helpers.map(h => `<div>
+          <div style="font-size:12px; font-weight:700; margin-bottom:6px;"><a onclick="nav('helperDetail','${h.id}')" style="cursor:pointer;">${escapeHtml(h.name)}</a></div>
+          ${typeof renderObservationsBlock === 'function' ? renderObservationsBlock('helper', h.id, {title:'Observations'}) : ''}
+        </div>`).join('')}
       </div>
-    `).join('')}
+    </div>
+    <div class="section">
+      <h2>By household</h2>
+      <div class="grid g2">
+        ${S.households.map(h => `<div>
+          <div style="font-size:12px; font-weight:700; margin-bottom:6px;"><a onclick="nav('householdDetail','${h.id}')" style="cursor:pointer;">${escapeHtml(h.name)}</a></div>
+          ${typeof renderObservationsBlock === 'function' ? renderObservationsBlock('household', h.id, {title:'Observations'}) : ''}
+        </div>`).join('')}
+      </div>
+    </div>
   `;
 }

@@ -139,14 +139,6 @@ function renderCurrentPage(){
       c.innerHTML = pageActivity();
       break;
 
-    case 'demo':
-      if(CURRENT_USER.role !== 'admin'){
-        nav(CURRENT_USER.role === 'helper' ? 'helperDetail' : 'householdDetail', CURRENT_USER.entityId);
-        return;
-      }
-      c.innerHTML = pageDemo();
-      if(typeof wireDemo === 'function') wireDemo();
-      break;
 
     case 'architecture':
       c.innerHTML = pageArchitecture();

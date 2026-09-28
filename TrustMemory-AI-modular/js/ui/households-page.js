@@ -169,6 +169,16 @@ function pageHouseholdDetail(id){
       </div>
     </div>
   </div>
+  <div class="section">
+    <h2>Hindsight memory for ${escapeHtml(h.name)}</h2>
+    <div class="grid g2">
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        ${typeof renderObservationsBlock === 'function' ? renderObservationsBlock('household', h.id) : ''}
+        ${typeof renderBriefBlock === 'function' ? renderBriefBlock('household', h.id) : ''}
+      </div>
+      <div>${typeof renderMentalModelBlock === 'function' ? renderMentalModelBlock('household', h.id) : ''}</div>
+    </div>
+  </div>
   <div class="grid g3" style="margin-bottom:24px;">
     <div class="metric"><div class="label">Household difficulty</div><div class="num ${sc.difficulty >= 55 ? 'warn' : 'ok'}">${sc.difficulty}</div><span class="badge ${diffBadgeClass(sc.difficulty)}" style="margin-top:8px;">${sc.difficulty>=65?'High':sc.difficulty>=40?'Watch':'Stable'}</span></div>
     <div class="metric"><div class="label">Placements on record</div><div class="num">${placements.length}</div></div>

@@ -17,6 +17,7 @@ const express = require('express');
 const db = require('./db');
 const groq = require('./groq');
 const hindsight = require('./hindsight');
+const retainQueue = require('./retain-queue');
 
 const router = express.Router();
 
@@ -50,7 +51,7 @@ function entityName(kind, id) {
 router.get('/api/memory/status', (req, res) => {
   res.json({
     groq: { configured: groq.isConfigured(), model: groq.MODEL, models: groq.MODEL_CHAIN, keys: groq.keyCount() },
-    hindsight: { configured: hindsight.isConfigured(), bank: hindsight.BANK_ID, base_url: hindsight.BASE_URL },
+    hindsight: { configured: hindsight.isConfigured(), bank: hindsight.BANK_ID, base_url: hindsight.BASE_URL, retains_waiting_for_retry: retainQueue.pendingCount() },
   });
 });
 
@@ -134,7 +135,12 @@ router.post('/api/memory/directives', async (req, res) => {
   if (!needHindsight(res)) return;
   const { name, content, priority } = req.body || {};
   if (!name || !content) return res.status(400).json({ error: 'name and content are required.' });
+  if (String(name).length > 80 || String(content).length > 500) return res.status(400).json({ error: 'Keep the name under 80 characters and the rule under 500.' });
   try {
+    const norm = t => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const existing = await hindsight.directives.list();
+    const clash = existing.find(d => norm(d.name) === norm(name) || norm(d.content) === norm(content));
+    if (clash) return res.status(409).json({ error: `A directive like this already exists: "${clash.name}".`, directive: clash });
     const d = await hindsight.directives.create({ name, content, priority: priority != null ? Number(priority) : 60 });
     db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run(
       'act_' + Date.now(), `MEMORY AGENT — Coordinator approved a new bank directive: "${name}". Every future reflect and call obeys it.`, new Date().toISOString().replace('T', ' ').substring(0, 19));

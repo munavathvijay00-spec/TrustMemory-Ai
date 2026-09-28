@@ -12,7 +12,6 @@ const NAV = [
   {id:'insights', label:'Insights'},
   {id:'voice', label:'Voice Agent'},
   {id:'activity', label:'Agent Activity'},
-  {id:'demo', label:'Demo Mode'},
   {id:'architecture', label:'Architecture'},
   {id:'settings', label:'Settings'},
 ];
@@ -168,7 +167,6 @@ const NAV_ADMIN = [
   {id:'insights', label:'Insights'},
   {id:'voice', label:'Voice Agent'},
   {id:'activity', label:'Agent Activity'},
-  {id:'demo', label:'Demo Mode'},
   {id:'architecture', label:'Architecture'},
   {id:'settings', label:'Settings'},
 ];

@@ -53,8 +53,11 @@ function computeDifficulty(householdId){
 function recalcAll(){
   S.helpers.forEach(h => {
     SCORES[h.id] = SCORES[h.id] || {};
-    SCORES[h.id].trust = computeTrust(h.id);
-    SCORES[h.id].churn = computeChurn(h.id);
+    // The server's Decision Agent owns trust and churn. Local formulas are only a fallback
+    // until the first sync, so every page shows the same number the server stored.
+    const server = window.SERVER_SCORES && window.SERVER_SCORES[h.id];
+    SCORES[h.id].trust = server ? server.trust : computeTrust(h.id);
+    SCORES[h.id].churn = server ? server.churn : computeChurn(h.id);
 
     // Track score history
     SCORE_HISTORY[h.id] = SCORE_HISTORY[h.id] || [];

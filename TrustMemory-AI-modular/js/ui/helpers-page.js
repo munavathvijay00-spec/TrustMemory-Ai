@@ -193,7 +193,10 @@ function pageHelperDetail(id){
   if(!h) return emptyState('Helper not found','');
   const sc = SCORES[h.id] || {trust: 68, churn: 18};
   const evs = helperEvents(id).slice().sort((a,b) => new Date(a.date) - new Date(b.date));
-  const why = churnWhy(h.id, sc.churn);
+  // Explain the score with the Decision Agent's own reasons from its latest Opinion entry.
+  const lastOpinion = (memOf(h.id).opinion || []).find(o => /^Churn risk recalculated/.test(o.text || ''));
+  const because = lastOpinion && (lastOpinion.text.match(/Because: (.*?)\. Source:/) || [])[1];
+  const why = because ? because.split('; ').map(r => r.replace(/\s*\(([+-]\d+)\)$/, ' ($1)')) : churnWhy(h.id, sc.churn);
   const hist = SCORE_HISTORY[h.id] || [];
   const churnTrend = hist.map(item => item.churn || 0);
 
@@ -235,11 +238,23 @@ function pageHelperDetail(id){
       </div>
     </div>
   </div>
+  <div class="section">
+    <h2>Hindsight memory for ${escapeHtml(h.name)}</h2>
+    <div class="grid g2">
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        ${typeof renderObservationsBlock === 'function' ? renderObservationsBlock('helper', h.id) : ''}
+        ${typeof renderBriefBlock === 'function' ? renderBriefBlock('helper', h.id) : ''}
+      </div>
+      <div>
+        ${typeof renderMentalModelBlock === 'function' ? renderMentalModelBlock('helper', h.id) : ''}
+      </div>
+    </div>
+  </div>
   <div class="grid g2">
     <div class="section" style="margin:0;">
       <h2>Memory timeline</h2>
       <div class="card"><div class="timeline">
-        ${evs.map(e => `<div class="tl-item ${eventTone(e.type)}"><div class="date">${fmtDate(e.date)}</div><div class="txt">${escapeHtml(e.description)}</div><div class="tag">${e.type.replace('_',' ')}${e.severity ? ' · ' + e.severity : ''}</div></div>`).join('') || '<div style="color:var(--ink-soft); font-size:13px;">No events recorded yet. Simulate an event or add a memory note below.</div>'}
+        ${evs.map(e => `<div class="tl-item ${eventTone(e.type)}"><div class="date">${fmtDate(e.date)}</div><div class="txt">${escapeHtml(e.description)}</div><div class="tag">${e.type.replace('_',' ')}${e.severity ? ' · ' + e.severity : ''}</div></div>`).join('') || '<div style="color:var(--ink-soft); font-size:13px;">No events recorded yet. Calls and notes will appear here.</div>'}
       </div></div>
 
       <div class="hr"></div>
@@ -268,21 +283,6 @@ function pageHelperDetail(id){
         <div class="action">Recommended action: <b>${sc.churn >= 75 ? 'Escalate to coordinator.' : sc.churn >= 55 ? 'Schedule coaching call.' : 'Continue routine monitoring.'}</b></div>
       </div>
       <div class="hr"></div>
-      <h2>Simulate an event</h2>
-      <div class="card">
-        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-          <select id="evType">
-            <option value="late_arrival">Late arrival</option>
-            <option value="complaint">Complaint</option>
-            <option value="positive_feedback">Positive feedback</option>
-            <option value="placement_failure">Placement failure</option>
-            <option value="successful_placement">Successful placement</option>
-          </select>
-          <button class="btn brass sm" id="simBtn">Simulate new event</button>
-        </div>
-        <div style="font-size:11.5px; color:var(--ink-soft); margin-top:8px;">Propagates through Memory → Decision → Reflection → Action.</div>
-      </div>
-      <div class="hr"></div>
       <h2>Actions</h2>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button class="btn primary sm" id="coachBtn">Start coaching call</button>
@@ -307,16 +307,11 @@ function handleAddHelperMemory(event, helperId){
 function wireHelpers(){}
 
 function wireHelperDetail(id){
-  const btn = document.getElementById('simBtn');
-  if(btn) btn.onclick = () => {
-    const type = document.getElementById('evType').value;
-    const placement = S.placements.find(p => p.helperId === id && p.status === 'active');
-    triggerEvent(type, id, placement ? placement.householdId : null);
-  };
   const coach = document.getElementById('coachBtn');
   if(coach) coach.onclick = () => {
-    const placement = S.placements.find(p => p.helperId === id && p.status === 'active');
-    startCall('coaching', id, placement ? placement.householdId : null, 'Manually initiated from profile.');
+    window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1, scenario: 'coaching_call'}, {helper: id});
+    nav('voice');
+    setTimeout(() => { const sel = document.getElementById('vHelper'); if(sel) sel.value = id; if(typeof startLiveVoiceSession === 'function') startLiveVoiceSession(); }, 250);
   };
   const esc = document.getElementById('escalateBtn');
   if(esc) esc.onclick = () => {

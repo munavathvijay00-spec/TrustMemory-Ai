@@ -16,6 +16,7 @@ const db = require('./db');
 const groq = require('./groq');
 const hindsight = require('./hindsight');
 const { recalculateChurn } = require('./decision');
+const retainQueue = require('./retain-queue');
 
 const SESSIONS = new Map();
 const END_TOKEN = '[END_CALL]';
@@ -33,6 +34,34 @@ function helperTags(helperId) {
 }
 
 /* ------------------------------------------------------------------ memory */
+
+/** Hindsight appends " | When: ... | Involving: ..." to recall text; compare on the sentence itself. */
+function factCore(text) {
+  return String(text || '').split(' | ')[0].trim();
+}
+
+function wordSet(text) {
+  return new Set(factCore(text).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length > 2));
+}
+
+/** Drop near-duplicates (the same fact retained by the seed and by live calls, or phrased twice). */
+function dedupeFacts(facts, existing = []) {
+  const kept = [];
+  const seen = existing.map(f => wordSet(f.text));
+  for (const f of facts) {
+    const ws = wordSet(f.text);
+    if (!ws.size) continue;
+    const dup = seen.some(o => {
+      let inter = 0;
+      for (const w of ws) if (o.has(w)) inter += 1;
+      return inter / Math.min(ws.size, o.size) >= 0.8;
+    });
+    if (dup) continue;
+    seen.push(ws);
+    kept.push(f);
+  }
+  return kept;
+}
 
 async function recallForHelper(helper, { useMemory = true, scenario = 'coaching_call' } = {}) {
   if (!useMemory) {
@@ -53,8 +82,8 @@ async function recallForHelper(helper, { useMemory = true, scenario = 'coaching_
       hindsight.recall(query, { tags: helperTags(helper.id), budget: 'mid', limit: 10 }),
       hindsight.mentalModels.get('coach-' + helper.id).catch(() => null),
     ]);
-    let facts = factsA;
-    if (!facts.length) facts = await hindsight.recall(query, { budget: 'low', limit: 6 });
+    // Only this helper's memories: an untagged, bank-wide fallback could pull another helper's facts into the call.
+    const facts = dedupeFacts(factsA);
     const mentalModel = mm && mm.content ? { name: mm.name, content: mm.content, updatedAt: mm.updated_at || mm.last_refreshed_at || null } : null;
     return { source: 'hindsight', bank: hindsight.BANK_ID, facts, mentalModel, localFacts: local, error: null };
   } catch (err) {
@@ -103,7 +132,7 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     : '- none';
   const last = priorCalls[0];
   const sinceBlock = scenario === 'followup_call' && last
-    ? '\nSINCE LAST CALL: you last spoke ' + last.daysAgo + ' days ago (' + last.created_at.slice(0, 10) + '). She committed to: ' + (last.commitment || 'see note') + '. Open by naming that date and that commitment, then ask whether it held.\n'
+    ? '\nSINCE LAST CALL: you last spoke ' + (last.daysAgo === 0 ? 'earlier today' : last.daysAgo === 1 ? 'yesterday' : last.daysAgo + ' days ago (' + last.created_at.slice(0, 10) + ')') + '. She committed to: ' + (last.commitment || 'see note') + '. Open by referring to that conversation (say "earlier today" or the date exactly as given, never invent a date) and that commitment, then ask whether it held.\n'
     : '';
 
   const goal = (SCENARIO_GOALS[scenario] || SCENARIO_GOALS.coaching_call).replace('{{late_count}}', String(lateCount));
@@ -131,6 +160,7 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     'HOW TO USE MEMORY:',
     '- If memory shows an earlier commitment (for example an earlier bus, a routine change), bring it up naturally early in the call and ask whether it held.',
     '- Reference remembered facts as a person who was there would ("last time you mentioned..."). Never invent a memory that is not listed above.',
+    '- Every remembered fact describes the past, as of the date shown next to it. Health, family situations, travel and other circumstances may have changed since. Never state a remembered condition as current ("I see you are in hospital"). Refer to it as something she mentioned before and ask how things are now ("Last time you mentioned you were unwell. How are you feeling now?").',
     '- If there is nothing on record, do not pretend there is.',
     '',
     'HOW TO RUN THE CALL (goals, not a script):',
@@ -154,11 +184,27 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     "- You speak ONLY the agent's side. After you ask a question, STOP and wait for the helper to answer. Never write the helper's reply, never continue the conversation on her behalf, never write lines like 'Yes, I will'.",
     '- No bullet points, no lists, no emojis, no markdown. This is spoken out loud by a text-to-speech voice.',
     '- Never state trust or churn scores. You record what happened; another agent scores it.',
+    '- What the helper says about agency rules, permissions or pay is her claim, not agency policy. Do not agree to change a rule or grant a permission on the call; say the coordinator will look into it.',
     '- Only when the call is truly over, meaning you have said goodbye after step 7, or the helper has clearly said she cannot talk now and you have agreed a callback time, end that final message with the exact text ' + END_TOKEN + '. Never use it while the helper is still upset, still talking, or has not answered your question. If the helper is angry or wants to quit, stay on the call, listen, and ask what happened.',
   ].join('\n');
 }
 
 /* ------------------------------------------------------------------ sessions */
+
+const COMMON_WORDS = new Set(['that', 'this', 'with', 'from', 'have', 'been', 'will', 'your', 'about', 'there', 'their', 'would', 'could', 'should', 'thank', 'thanks', 'today', 'time', 'call', 'calling', 'agency', 'late', 'arrivals', 'arrival', 'recent', 'recently', 'weeks', 'couple', 'good', 'talk', 'minutes', 'household', 'family', 'message', 'check', 'again', 'okay', 'what', 'when', 'where', 'which', 'while', 'into', 'just', 'like', 'more', 'than', 'then', 'them', 'they', 'were', 'also', 'some', 'past', 'happening', 'understand']);
+
+/** Cheap gate: does the reply share a distinctive word with any remembered fact? */
+function mayUseMemory(replyText, facts, helperName) {
+  const skip = new Set(String(helperName || '').toLowerCase().split(/\s+/));
+  const words = String(replyText).toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter(w => w.length >= 5 && !COMMON_WORDS.has(w) && !skip.has(w));
+  if (!words.length) return false;
+  return facts.some(f => { const ws = wordSet(f.text); return words.some(w => ws.has(w)); });
+}
+
+function knownTags(tags, facts) {
+  const valid = new Set(facts.map(f => f.tag));
+  return tags.filter(t => valid.has(t));
+}
 
 /** If the model used memory but forgot to tag it, ask a small model which facts the sentence drew on. */
 async function attributeCitations(replyText, facts) {
@@ -191,7 +237,7 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
   ).all(helperId).map(c => {
     let note = '', commitment = null;
     try { const o = JSON.parse(c.outcome_json || '{}'); note = o.coordinator_note || ''; commitment = o.specific_commitment || null; } catch (e) { /* ignore */ }
-    return { scenario: c.scenario, created_at: c.created_at, daysAgo: daysBetween(c.created_at.replace(' ', 'T'), Date.now()), note: note || 'no summary recorded', commitment };
+    return { scenario: c.scenario, created_at: c.created_at, daysAgo: daysBetween(c.created_at.replace(' ', 'T') + 'Z', Date.now()), note: note || 'no summary recorded', commitment };
   });
 
   const memory = await recallForHelper(helper, { useMemory, scenario });
@@ -206,7 +252,8 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
   const rawGreeting = await groq.chat(messages, { temperature: 0.6, maxTokens: 400 });
   const g = splitCitations(rawGreeting);
   const greeting = g.text;
-  if (!g.cited.length && useMemory && memory.facts.length && /remember|last time|mentioned|earlier|neighbour|arrang|commit/i.test(greeting)) {
+  g.cited = knownTags(g.cited, memory.facts);
+  if (!g.cited.length && useMemory && memory.facts.length && mayUseMemory(greeting, memory.facts, helper.name)) {
     g.cited = await attributeCitations(greeting, memory.facts);
   }
 
@@ -220,6 +267,7 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
     memory,
     priorCalls,
     startedAt: new Date().toISOString(),
+    lastActivity: Date.now(),
     useMemory,
     messages: [messages[0], { role: 'assistant', content: rawGreeting }],
     transcript: [{ who: 'Agent', text: greeting, cited: g.cited, t: new Date().toISOString() }],
@@ -244,8 +292,9 @@ async function turn(sessionId, userText) {
     throw Object.assign(new Error('This call has already been saved. Start a new call to continue.'), { status: 409 });
   }
   if (s.callState === 'declined' || s.callState === 'ended') {
-    throw Object.assign(new Error('The helper is no longer on the call.'), { status: 409 });
+    throw Object.assign(new Error('This call has ended.'), { status: 409 });
   }
+  s.lastActivity = Date.now();
   // The agent may have tried to wrap up, but the helper kept talking: the call is still live.
   if (s.status === 'wrapping_up') s.status = 'active';
   const text = String(userText || '').trim();
@@ -257,11 +306,17 @@ async function turn(sessionId, userText) {
   if (s.useMemory !== false && hindsight.isConfigured() && text.split(' ').length >= 3) {
     try {
       const hits = await hindsight.recall(text, { tags: helperTags(s.helper.id), budget: 'low', limit: 3, maxTokens: 600 });
+      // Facts already on this call are reused (same tag); genuinely new ones are appended once.
       const known = new Set(s.memory.facts.map(f => String(f.text).split(' | ')[0].slice(0, 80)));
       for (const h of hits) {
         const key = String(h.text).split(' | ')[0].slice(0, 80);
         let fact = s.memory.facts.find(f => String(f.text).split(' | ')[0].slice(0, 80) === key);
         if (!fact) {
+          if (!dedupeFacts([h], s.memory.facts).length) {
+            const hw = wordSet(h.text);
+            fact = s.memory.facts.find(f => { const fw = wordSet(f.text); let i = 0; for (const w of hw) if (fw.has(w)) i += 1; return i / Math.min(hw.size || 1, fw.size || 1) >= 0.8; });
+            if (fact) { recalledNow.push(fact); continue; }
+          }
           fact = Object.assign({}, h, { tag: 'm' + (s.memory.facts.length + 1) });
           s.memory.facts.push(fact);
           known.add(key);
@@ -270,6 +325,7 @@ async function turn(sessionId, userText) {
       }
     } catch (e) { /* recall is best-effort per turn */ }
   }
+  recalledNow = recalledNow.filter((f, i, a) => a.indexOf(f) === i);
   s.messages.push({ role: 'user', content: text });
   if (recalledNow.length) {
     s.messages.push({
@@ -302,7 +358,8 @@ async function turn(sessionId, userText) {
   if (nameRe.test(reply)) { reply = reply.split(nameRe)[0].trim(); ending = false; }
 
   const c = splitCitations(reply);
-  if (!c.cited.length && s.useMemory !== false && s.memory.facts.length) {
+  c.cited = knownTags(c.cited, s.memory.facts);
+  if (!c.cited.length && s.useMemory !== false && s.memory.facts.length && mayUseMemory(c.text, s.memory.facts, s.helper.name)) {
     c.cited = await attributeCitations(c.text, s.memory.facts);
   }
   s.messages.push({ role: 'assistant', content: rawReply + (ending ? ' ' + END_TOKEN : '') });
@@ -317,8 +374,11 @@ async function turn(sessionId, userText) {
 
 async function extractOutcome(s) {
   const dialogue = s.transcript.map(t => t.who + ': ' + t.text).join('\n');
+  const callDate = new Date().toISOString().slice(0, 10);
   const prompt = [
-    'You are the agency coordinator\'s assistant. Read this coaching call transcript between the agency\'s voice agent ("Agent") and helper ' + s.helper.name + ' and extract what actually happened. Do not invent details that are not in the transcript. If something was not discussed, use null or false.',
+    'You are the agency coordinator\'s assistant. Read this coaching call transcript between the agency\'s voice agent ("Agent") and helper ' + s.helper.name + ' and extract what actually happened on this call, dated ' + callDate + '. Do not invent details that are not in the transcript. If something was not discussed, use null or false.',
+    '',
+    'IMPORTANT: the Agent\'s lines often repeat what the agency remembered from EARLIER calls. They are not new evidence. Take facts only from what ' + firstName(s.helper.name) + ' herself said on this call. If the Agent mentioned something and she did not confirm it in her own words, do not record it. Write circumstances (health, family, travel) as dated statements, e.g. "On ' + callDate + ', ' + firstName(s.helper.name) + ' said she was unwell", never as "is currently".',
     '',
     'Return JSON with exactly these keys:',
     '{',
@@ -329,8 +389,8 @@ async function extractOutcome(s) {
     '  "follow_up_days": integer (14 if a two-week check-in was agreed, otherwise your best reading, otherwise 14),',
     '  "escalation_required": boolean,',
     '  "call_completed": boolean (false if the helper asked to be called back later),',
-    '  "coordinator_note": one or two plain sentences for the coordinator,',
-    '  "memory_facts": array of 2 to 5 short third-person facts worth remembering about ' + s.helper.name + ' from this call',
+    '  "coordinator_note": one or two plain sentences for the coordinator about what she said on THIS call,',
+    '  "memory_facts": array of 0 to 5 short third-person facts she stated herself on this call, dated where they describe a circumstance (empty array if she said nothing new)',
     '}',
     '',
     'TRANSCRIPT:',
@@ -343,9 +403,20 @@ async function completeSession(sessionId) {
   const s = SESSIONS.get(sessionId);
   if (!s) throw Object.assign(new Error('Session not found.'), { status: 404 });
   if (s.result) return s.result;
+  // A second request while the first is still saving waits for the same result instead of saving again.
+  if (s.completing) return s.completing;
   if (s.transcript.length < 2) throw Object.assign(new Error('The call has no helper turns yet, nothing to record.'), { status: 400 });
 
   s.status = 'completing';
+  s.lastActivity = Date.now();
+  s.completing = saveCall(s).then(
+    result => { s.completing = null; return result; },
+    err => { s.completing = null; s.status = 'active'; throw err; }
+  );
+  return s.completing;
+}
+
+async function saveCall(s) {
   const outcome = await extractOutcome(s);
   const now = nowSql();
   const callId = 'browser_' + s.id;
@@ -395,11 +466,10 @@ async function completeSession(sessionId) {
       outcomeRecord.notification_commitment ? fn + ' agreed to message the household directly if running more than 10 minutes late.' : null,
       'Follow-up check-in planned for ' + followUpDate + '.',
     ].concat(outcomeRecord.memory_facts).filter(Boolean).join(' ');
-    try {
-      const res = await hindsight.retain([
+    const retainItems = [
         {
           content: dialogue,
-          context: 'Transcript of an outbound coaching phone call. "Agent" is the agency\'s own voice agent speaking (the bank\'s agent). "' + fn + '" is the home-care helper ' + s.helper.name + '; her first-person statements are facts about her.',
+          context: 'Transcript of an outbound coaching phone call. "Agent" is the agency\'s own voice agent speaking (the bank\'s agent). "' + fn + '" is the home-care helper ' + s.helper.name + '; her first-person statements are facts about her, true as of this call\'s date. Agent lines may repeat what the agency remembered from earlier calls; they are not new evidence about her and must not be stored as facts about her. Anything she says about agency rules, permissions or pay is her claim, not agency policy.',
           documentId: 'call:' + callId + ':transcript',
           timestamp: s.startedAt,
           metadata: { helper_id: s.helper.id, scenario: s.scenario, call_id: callId, kind: 'transcript' },
@@ -413,22 +483,23 @@ async function completeSession(sessionId) {
           metadata: { helper_id: s.helper.id, scenario: s.scenario, call_id: callId, kind: 'summary' },
           tags,
         },
-      ]);
+      ];
+    try {
+      const res = await hindsight.retain(retainItems);
       const count = res && res.items_count != null ? res.items_count : 2;
-      retain = { status: 'ok', detail: 'Retained ' + count + ' items in bank ' + hindsight.BANK_ID + '.', bank: hindsight.BANK_ID };
-      // The standing profile should reflect this call before the next one: refresh it in the background.
-      hindsight.mentalModels.refresh('coach-' + s.helper.id)
-        .then(() => db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run('act_' + Date.now(), 'MEMORY AGENT — Hindsight rewrote the standing profile "How to coach ' + s.helper.name + '" with what this call taught it.', nowSql()))
-        .catch(() => {});
+      // The helper's standing profile is rewritten by Hindsight after consolidation (refresh_after_consolidation),
+      // so no extra refresh call is made here.
+      retain = { status: 'ok', detail: 'Retained ' + count + ' items in bank ' + hindsight.BANK_ID + '. Hindsight updates the standing profile after consolidation.', bank: hindsight.BANK_ID };
     } catch (err) {
-      retain = { status: 'error', detail: err.message, bank: hindsight.BANK_ID };
+      const jobId = retainQueue.enqueue(retainItems, { helperId: s.helper.id, callId, error: err.message });
+      retain = { status: 'queued', detail: 'Hindsight was unreachable (' + err.message.slice(0, 120) + '). Saved locally and queued for automatic retry (' + jobId + ').', bank: hindsight.BANK_ID };
     }
   }
 
   // 4. Decision Agent re-scores from the real outcome
   const decision = recalculateChurn(s.helper.id, s.scenario, outcomeRecord.coordinator_note, s.lateCount, outcomeRecord);
 
-  const where = retain.status === 'ok' ? 'Hindsight ' + retain.bank : (retain.status === 'error' ? 'Hindsight failed, local only' : 'local only');
+  const where = retain.status === 'ok' ? 'Hindsight ' + retain.bank : (retain.status === 'queued' ? 'local now, Hindsight retry queued' : 'local only');
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run(
     'act_' + (Date.now() + 1),
     'MEMORY AGENT — Retained call with ' + s.helper.name + ' to Experience network (' + where + ').',
@@ -475,6 +546,7 @@ function publicView(s) {
 function getSession(sessionId) {
   const s = SESSIONS.get(sessionId);
   if (!s) return null;
+  expireRing(s);
   return Object.assign(publicView(s), { transcript: s.transcript, result: s.result });
 }
 
@@ -495,7 +567,27 @@ const RING_TIMEOUT_MS = 60 * 1000;
 function setCallState(s, state) {
   s.callState = state;
   s.callStateAt = new Date().toISOString();
+  s.lastActivity = Date.now();
 }
+
+/** An unanswered ring becomes "missed" after the timeout, whether or not the phone screen is open. */
+function expireRing(s) {
+  if (s.callState === 'ringing' && Date.now() - new Date(s.callStateAt).getTime() > RING_TIMEOUT_MS) {
+    setCallState(s, 'missed');
+    db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'voice', ?, ?)").run(
+      'act_' + Date.now(), 'VOICE AGENT — ' + s.helper.name + ' did not answer.', nowSql());
+  }
+}
+
+/* Sessions live in memory. Sweep finished and abandoned ones so the process does not grow forever. */
+const IDLE_MS = 30 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, s] of SESSIONS) {
+    if (s.completing) continue;
+    if (now - (s.lastActivity || 0) > IDLE_MS) SESSIONS.delete(id);
+  }
+}, 5 * 60 * 1000).unref();
 
 function ring(sessionId) {
   const s = SESSIONS.get(sessionId);
@@ -516,7 +608,8 @@ function incoming(helperId) {
   let found = null;
   for (const s of SESSIONS.values()) {
     if (s.helper.id !== helperId || s.callState !== 'ringing') continue;
-    if (now - new Date(s.callStateAt).getTime() > RING_TIMEOUT_MS) { setCallState(s, 'missed'); continue; }
+    expireRing(s);
+    if (s.callState !== 'ringing') continue;
     if (!found || s.callStateAt > found.callStateAt) found = s;
   }
   if (!found) return null;
@@ -548,4 +641,4 @@ function hangup(sessionId, by) {
   return { session_id: s.id, call_state: s.callState, ended_by: s.endedBy };
 }
 
-module.exports = { startSession, turn, completeSession, getSession, cancelSession, ring, incoming, answer, hangup };
+module.exports = { startSession, turn, completeSession, getSession, cancelSession, ring, incoming, answer, hangup, _test: { dedupeFacts, mayUseMemory, knownTags, splitCitations, daysBetween } };

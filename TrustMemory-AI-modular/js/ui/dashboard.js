@@ -16,6 +16,7 @@ function pageDashboard(){
   return `
     <div class="pagehead">
       <div class="eyebrow">Coordinator Dashboard</div>
+  ${typeof renderLearningMetrics === 'function' ? '<div style="margin-bottom:20px;">' + renderLearningMetrics() + '</div>' : ''}
       <h1>Your agency's memory, intelligence and action layer.</h1>
       <div class="lede">Every agent writes here: escalation calls from the Voice Agent, score changes from the Decision Agent, cross-placement patterns from the Reflection Agent, and pre-staged backups from the Matching Agent.</div>
     </div>

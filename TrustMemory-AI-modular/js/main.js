@@ -22,6 +22,8 @@ async function syncBackendData(){
     ]);
 
     if(hRes && Array.isArray(hRes)){
+      window.SERVER_SCORES = {};
+      hRes.forEach(dbH => { window.SERVER_SCORES[dbH.id] = {trust: dbH.trust, churn: dbH.churn}; });
       hRes.forEach(dbH => {
         const local = S.helpers.find(h => h.id === dbH.id);
         if(local){
@@ -43,7 +45,7 @@ async function syncBackendData(){
             type: c.scenario || 'coaching_call',
             helperId: c.helper_id || 'anita',
             householdId: c.outcome?.household_id || (S.placements.find(p => p.helperId === c.helper_id)?.householdId) || null,
-            destinationPhone: c.outcome?.to || '+91 8341745014',
+            destinationPhone: c.outcome?.provider === 'browser_voice' ? 'Voice agent (Groq + Hindsight)' : (c.outcome?.provider || ''),
             lateCount: c.outcome?.late_count || 2,
             reason: c.outcome?.reason || `${c.outcome?.late_count || 2} recent late arrivals check-in`,
             status: c.status,
@@ -92,6 +94,7 @@ async function syncBackendData(){
       });
     }
 
+    if(typeof recalcAll === 'function') recalcAll();
     if(typeof renderCurrentPage === 'function') renderCurrentPage();
   } catch(err){
     console.warn('Backend sync note:', err.message);
