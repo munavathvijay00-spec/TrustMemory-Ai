@@ -6,6 +6,7 @@ require('dotenv').config();
 const db = require('./db');
 const { placeOutboundCall, createDograhSession, sendDograhMessage, endDograhSession } = require('./dograh');
 const { recalculateChurn } = require('./decision');
+const { memoryService } = require('./memory/memoryService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,13 +36,21 @@ app.post('/api/place-call', async (req, res) => {
   }
 
   try {
+    // 1. Recall and reflect Hindsight memory context before placing call
+    const memoryContext = await memoryService.buildAgentMemoryContext(
+      helper_id || 'anita',
+      helper_name || 'Anita Verma',
+      { lateCount: late_count, scenario }
+    );
+
     const callResult = await placeOutboundCall({
       to,
       helper_name,
       household_name,
       role,
       late_count: late_count || 2,
-      scenario: scenario || 'coaching_call'
+      scenario: scenario || 'coaching_call',
+      memory_context: memoryContext
     });
 
     const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
@@ -122,7 +131,7 @@ app.get('/api/call-status/:call_id', (req, res) => {
  * Webhook receiver parsing Dograh post-call payload, saving Experience memory,
  * and triggering Decision Agent recalculation.
  */
-app.post('/api/dograh-webhook', (req, res) => {
+app.post('/api/dograh-webhook', async (req, res) => {
   const payload = req.body || {};
   const call_id = payload.call_id || payload.id;
   const helper_id = payload.helper_id || payload.initial_context?.helper_id || 'anita';
@@ -183,32 +192,72 @@ app.post('/api/dograh-webhook', (req, res) => {
     }
   }
 
-  // 2. Write one Experience memory entry to the memory store
+  // 2. Retain into Hindsight long-term memory (helper-{helper_id})
+  let hindsightResult = null;
+  try {
+    hindsightResult = await memoryService.retainCallMemory({
+      helperId: helper_id || 'anita',
+      helperName: helper_name || 'Anita Verma',
+      lateCount: late_count || 2,
+      scenario: scenario || 'coaching_call',
+      transcript: transcript || [],
+      outcome: {
+        root_cause_identified,
+        specific_commitment,
+        notification_commitment,
+        sentiment: 'cooperative'
+      }
+    });
+  } catch (e) {
+    console.warn('[Hindsight] Webhook retain notice: Memory service unavailable, call completed without error.');
+  }
+
+  // 3. Write Experience memory entry to SQLite audit store
   const memoryId = 'mem_' + Date.now();
   db.prepare(`
     INSERT INTO memories (id, helper_id, household_id, network, content, created_at)
     VALUES (?, ?, ?, 'experience', ?, ?)
   `).run(memoryId, helper_id, null, `Voice call completed (${scenario}): ${coordinator_note}`, now);
 
-  // 3. Trigger Decision Agent recalculation for the helper (Priority 3)
+  // 4. Trigger Decision Agent recalculation for the helper (Priority 3)
   const decisionResult = recalculateChurn(helper_id, scenario, coordinator_note, late_count);
 
   return res.status(200).json({
     success: true,
     call_id,
     memory_id: memoryId,
+    hindsight: hindsightResult,
     decision: decisionResult
   });
 });
 
 /**
- * Dograh AI Live Agent Interactive Session Endpoints
+ * Dograh AI Live Agent Interactive Session Endpoints (Augmented with Hindsight Memory)
  */
 app.post('/api/dograh/session', async (req, res) => {
   try {
-    const { helper_name, late_count, scenario } = req.body;
-    const session = await createDograhSession({ helper_name, late_count, scenario });
-    return res.json(session);
+    const { helper_id, helper_name, late_count, scenario } = req.body;
+
+    // 1. Recall & reflect from Hindsight bank before starting conversation
+    const memoryContext = await memoryService.buildAgentMemoryContext(
+      helper_id || 'anita',
+      helper_name || 'Anita Verma',
+      { lateCount: late_count || 2, scenario: scenario || 'coaching_call' }
+    );
+
+    // 2. Start session with injected memory context
+    const session = await createDograhSession({
+      helper_id: helper_id || 'anita',
+      helper_name: helper_name || 'Anita Verma',
+      late_count: late_count || 2,
+      scenario: scenario || 'coaching_call',
+      memory_context: memoryContext
+    });
+
+    return res.json({
+      ...session,
+      memory_context: memoryContext
+    });
   } catch(err) {
     return res.status(500).json({ error: err.message });
   }
@@ -235,7 +284,7 @@ app.post('/api/dograh/complete', async (req, res) => {
     const call_id = `dograh_run_${run_id}`;
     const coordinator_note = `${(helper_name || 'Anita').split(' ')[0]} completed coaching session directly with Dograh AI Agent (Run #${run_id}). Logged attendance variance commitments.`;
 
-    const outcome_json = JSON.stringify({
+    const outcome = {
       sentiment: 'cooperative',
       root_cause_identified: 'transit delay on bus route',
       specific_commitment: 'leave on earlier 7:15 AM bus',
@@ -244,12 +293,27 @@ app.post('/api/dograh/complete', async (req, res) => {
       escalations_required: false,
       coordinator_note,
       dograh_run_id: run_id
-    });
+    };
+
+    // 1. RETAIN into Hindsight long-term memory bank (helper-{helper_id})
+    let hindsightRetain = null;
+    try {
+      hindsightRetain = await memoryService.retainCallMemory({
+        helperId: helper_id || 'anita',
+        helperName: helper_name || 'Anita Verma',
+        lateCount: late_count || 2,
+        scenario: scenario || 'coaching_call',
+        transcript: transcript || [],
+        outcome: outcome
+      });
+    } catch (e) {
+      console.warn('[Hindsight] Complete session retain notice: Memory service unavailable.');
+    }
 
     db.prepare(`
       INSERT INTO calls (id, helper_id, call_id, scenario, status, transcript, outcome_json, created_at)
       VALUES (?, ?, ?, ?, 'completed', ?, ?, ?)
-    `).run('c_' + Date.now(), helper_id || 'anita', call_id, scenario || 'coaching_call', JSON.stringify(transcript || []), outcome_json, now);
+    `).run('c_' + Date.now(), helper_id || 'anita', call_id, scenario || 'coaching_call', JSON.stringify(transcript || []), JSON.stringify(outcome), now);
 
     const memoryId = 'mem_' + Date.now();
     db.prepare(`
@@ -263,8 +327,66 @@ app.post('/api/dograh/complete', async (req, res) => {
       success: true,
       call_id,
       memory_id: memoryId,
+      hindsight: hindsightRetain,
       decision: decisionResult
     });
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * HINDSIGHT MEMORY REST ENDPOINTS
+ * Health, Bank resolution, Retain, Recall, Reflect, and Pre-call Context
+ */
+app.get('/api/hindsight/health', async (req, res) => {
+  const health = await memoryService.checkHealth();
+  return res.json(health);
+});
+
+app.get('/api/hindsight/context/:helper_id', async (req, res) => {
+  try {
+    const { helper_id } = req.params;
+    const helper = db.prepare('SELECT * FROM helpers WHERE id = ?').get(helper_id) || { name: 'Anita Verma' };
+    const context = await memoryService.buildAgentMemoryContext(helper_id, helper.name);
+    return res.json(context);
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/hindsight/retain', async (req, res) => {
+  try {
+    const { helper_id, helper_name, late_count, scenario, transcript, outcome } = req.body;
+    const result = await memoryService.retainCallMemory({
+      helperId: helper_id,
+      helperName: helper_name,
+      lateCount: late_count,
+      scenario,
+      transcript,
+      outcome
+    });
+    return res.json(result);
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/hindsight/recall', async (req, res) => {
+  try {
+    const { helper_id, query } = req.body;
+    const result = await memoryService.recallHelperMemory(helper_id, query);
+    return res.json(result);
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/hindsight/reflect', async (req, res) => {
+  try {
+    const { helper_id, query } = req.body;
+    const result = await memoryService.reflectOnHelperHistory(helper_id, query);
+    return res.json(result);
   } catch(err) {
     return res.status(500).json({ error: err.message });
   }

@@ -194,6 +194,15 @@ const CALL_SCRIPTS = {
     {who:firstName(h.name), text:`Yes madam, that works for me. Thank you.`},
     {who:'Voice Agent', text:`Thank you for talking with me. I've noted what you said. We'll check in again on ${followUpDate || 'in two weeks'}.`},
   ],
+  coaching_call_with_memory: (h, hh, lateCount, followUpDate) => [
+    {who:'Voice Agent', text:`Hi ${firstName(h.name)}, this is a quick check-in from the agency. Last time we spoke, you mentioned that the bus timing was causing delays and you were going to try an earlier bus. How has that been working for you?`},
+    {who:firstName(h.name), text:`Sorry about that madam, the earlier 7:15 AM bus was cancelled twice this week due to ongoing road work.`},
+    {who:'Voice Agent', text:`I understand. That sounds difficult. What do you think would work better now?`},
+    {who:firstName(h.name), text:`I checked an alternative sharing auto route that leaves from the main junction. It takes only 20 minutes.`},
+    {who:'Voice Agent', text:`Okay, so from tomorrow you'll take the sharing auto route instead. And if you're going to be more than 10 minutes late, will you still message the household directly?`},
+    {who:firstName(h.name), text:`Yes madam, absolutely. I will directly message the family immediately.`},
+    {who:'Voice Agent', text:`Thank you for talking with me. I've updated your notes with the new route. We'll check in again on ${followUpDate || 'in two weeks'}.`},
+  ],
   household_checkin: (h, hh) => [
     {who:'Voice Agent', text:`Hi, this is the agency. I'm calling for a quick check-in on how things have been going with ${firstName(h.name)}.`},
     {who:'Household', text:`Mostly fine. She has been very attentive to my father's medicine schedule, which we really appreciate, but scheduling on evenings has had some friction.`},
@@ -259,11 +268,31 @@ function startCall(type, helperId, householdId, reason, idempotencyKey, scenario
   if(scenarioType === 'checkin') scenarioType = 'household_checkin';
   if(scenarioType === 'escalation') scenarioType = 'escalation_call';
 
-  recall(helperId, 'attendance and coaching history');
-  log('voice','VOICE AGENT', `Initiated outbound call to verified destination ${livePhone} for ${helper.name} (Scenario: ${scenarioType}).`);
+  const priorCalls = S.calls.filter(c => c.helperId === helperId);
+  const isSecondCall = priorCalls.length > 0 || (window.HINDSIGHT_CONTEXT && window.HINDSIGHT_CONTEXT.has_previous_memory);
 
-  const scriptFn = CALL_SCRIPTS[scenarioType] || CALL_SCRIPTS.coaching_call;
-  const script = scriptFn(helper, household, actualLateCount, followUpDate);
+  let script;
+  let rootCause;
+  let commitment;
+  let coordinatorNote;
+
+  if (scenarioType === 'coaching_call' && isSecondCall) {
+    script = CALL_SCRIPTS.coaching_call_with_memory(helper, household, actualLateCount, followUpDate);
+    rootCause = 'earlier 7:15 AM bus was cancelled due to road work';
+    commitment = 'switch to sharing auto route from main junction';
+    coordinatorNote = `${firstName(helper.name)} reported previous earlier bus was cancelled; agreed to switch to sharing auto route and message household if >10 min late.`;
+    log('voice','VOICE AGENT', `Applied Hindsight memory context (Call 2 continuity): acknowledged previous bus timing and adapted to new route.`);
+  } else {
+    const scriptFn = CALL_SCRIPTS[scenarioType] || CALL_SCRIPTS.coaching_call;
+    script = scriptFn(helper, household, actualLateCount, followUpDate);
+    rootCause = scenarioType === 'coaching_call' ? 'delay on bus route due to road work' : null;
+    commitment = scenarioType === 'coaching_call' ? 'take earlier bus at 07:15 AM instead of 07:40 AM' : (scenarioType === 'escalation_call' ? 'leave 30 minutes earlier from tomorrow' : null);
+    coordinatorNote = scenarioType === 'coaching_call'
+      ? `${firstName(helper.name)} explained root cause, agreed to 7:15 AM bus, and committed to message household if >10 min late.`
+      : scenarioType === 'household_checkin'
+      ? `Household praised medicine care, noted evening flexibility friction; referred to coordinator.`
+      : `Helper acknowledged arrival boundary; committed to 30 min earlier departure.`;
+  }
 
   const sentiment = scenarioType === 'escalation_call' ? 'concerned' : 'cooperative';
 
@@ -275,17 +304,36 @@ function startCall(type, helperId, householdId, reason, idempotencyKey, scenario
     destination_phone: livePhone,
     duration_seconds: scenarioType === 'coaching_call' ? 184 : scenarioType === 'household_checkin' ? 142 : 210,
     sentiment: sentiment,
-    root_cause_identified: scenarioType === 'coaching_call' ? 'delay on bus route due to road work' : null,
-    specific_commitment: scenarioType === 'coaching_call' ? 'take earlier bus at 07:15 AM instead of 07:40 AM' : (scenarioType === 'escalation_call' ? 'leave 30 minutes earlier from tomorrow' : null),
+    root_cause_identified: rootCause,
+    specific_commitment: commitment,
     notification_commitment: scenarioType !== 'household_checkin',
     follow_up_date: followUpDate,
     escalations_required: scenarioType === 'escalation_call',
-    coordinator_note: scenarioType === 'coaching_call'
-      ? `${firstName(helper.name)} explained root cause, agreed to 7:15 AM bus, and committed to message household if >10 min late.`
-      : scenarioType === 'household_checkin'
-      ? `Household praised medicine care, noted evening flexibility friction; referred to coordinator.`
-      : `Helper acknowledged arrival boundary; committed to 30 min earlier departure.`
+    coordinator_note: coordinatorNote
   };
+
+  // Retain into Hindsight long-term memory bank
+  try {
+    fetch('/api/hindsight/retain', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        helper_id: helperId,
+        helper_name: helper.name,
+        late_count: actualLateCount,
+        scenario: scenarioType,
+        transcript: script,
+        outcome: {
+          root_cause_identified: rootCause,
+          specific_commitment: commitment,
+          notification_commitment: true,
+          sentiment: sentiment
+        }
+      })
+    }).then(() => {
+      log('mem', 'HINDSIGHT MEMORY', `Retained durable memory in Hindsight bank helper-${helperId}.`);
+    }).catch(() => {});
+  } catch(e) {}
 
   const call = {
     id: uid(),

@@ -251,6 +251,9 @@ function pageVoice(){
       <pre style="background:#1C2530; color:#EDE9DF; padding:16px; border-radius:4px; font-family:var(--font-mono); font-size:11.5px; line-height:1.5; white-space:pre-wrap; max-height:360px; overflow-y:auto;">${escapeHtml(VOICE_AGENT_SYSTEM_PROMPT)}</pre>
     </div>
 
+    <!-- Hindsight Long-Term Memory Intelligence Card -->
+    ${renderHindsightMemoryCard()}
+
     <!-- Call Control & Input Card -->
     <div class="card" style="margin-bottom:20px; padding:20px;">
       <div style="font-weight:700; font-size:14px; margin-bottom:14px; color:var(--ink); display:flex; justify-content:space-between; align-items:center;">
@@ -282,10 +285,10 @@ function pageVoice(){
           <label style="display:block; font-size:11px; font-weight:700; text-transform:uppercase; margin-bottom:5px; color:var(--ink-soft);">
             Target Helper
           </label>
-          <select id="vHelper" style="width:100%; padding:9px 12px; font-size:13px; border:1px solid var(--line-strong); border-radius:var(--radius); background:#fff; box-sizing:border-box;">
+          <select id="vHelper" onchange="onVoiceHelperChange(this.value)" style="width:100%; padding:9px 12px; font-size:13px; border:1px solid var(--line-strong); border-radius:var(--radius); background:#fff; box-sizing:border-box;">
             <optgroup label="Live Destination (Dialable with manual phone)">
-              <option value="anita" selected>Anita Verma (Live Destination)</option>
-              ${S.helpers.filter(h => h.id !== 'anita').map(h => `<option value="${h.id}">${escapeHtml(h.name)}</option>`).join('')}
+              <option value="anita" ${(window.SELECTED_VOICE_HELPER || 'anita') === 'anita' ? 'selected' : ''}>Anita Verma (Live Destination)</option>
+              ${S.helpers.filter(h => h.id !== 'anita').map(h => `<option value="${h.id}" ${(window.SELECTED_VOICE_HELPER || 'anita') === h.id ? 'selected' : ''}>${escapeHtml(h.name)}</option>`).join('')}
             </optgroup>
             <optgroup label="Demonstration Records (Blocked from dialing)">
               <option value="test_02">Test Helper 02 (TEST_NUMBER_02)</option>
@@ -804,3 +807,119 @@ async function completeLiveDograhSession(){
     alert('Failed to complete Dograh session: ' + e.message);
   }
 }
+
+/**
+ * =========================================================================
+ * VECTORIZE HINDSIGHT LONG-TERM MEMORY ENGINE UI
+ * Dedicated memory bank per helper (helper-{helper_id}), Recall, Reflect, Continuity
+ * =========================================================================
+ */
+function renderHindsightMemoryCard(){
+  const helperId = window.SELECTED_VOICE_HELPER || 'anita';
+  const helper = S.helpers.find(h => h.id === helperId) || { name: 'Anita Verma' };
+  const bankId = `helper-${helperId}`;
+  const ctx = window.HINDSIGHT_CONTEXT || null;
+  const hasMem = ctx && ctx.has_previous_memory;
+
+  // Auto-fetch context on initial render if not yet loaded
+  if(!window.HINDSIGHT_FETCHED_HELPER || window.HINDSIGHT_FETCHED_HELPER !== helperId){
+    window.HINDSIGHT_FETCHED_HELPER = helperId;
+    setTimeout(() => { refreshHindsightContext(helperId); }, 20);
+  }
+
+  return `
+    <div class="card" style="margin-bottom:20px; border-left:4px solid #1C653C; background:#FAFBF9; padding:18px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:22px;">🧠</span>
+          <div>
+            <div style="font-weight:700; font-size:13.5px; color:var(--ink); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span>VECTORIZE HINDSIGHT MEMORY ENGINE</span>
+              <span style="font-size:11px; background:#D7EFE0; color:#12592D; padding:2px 8px; border-radius:3px; font-weight:700;">Bank: <code>${escapeHtml(bankId)}</code></span>
+              <span style="font-size:11px; background:#ECE7DC; color:var(--ink); padding:2px 8px; border-radius:3px; font-weight:600;">@vectorize-io/hindsight-client</span>
+            </div>
+            <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">
+              Dedicated memory bank isolated strictly per helper. Cross-call continuity across previous interactions.
+            </div>
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <button class="btn sm" onclick="refreshHindsightContext('${escapeHtml(helperId)}')" style="font-size:11.5px; padding:4px 10px;">
+            🔄 Refresh Bank
+          </button>
+          <button class="btn sm" onclick="simulateSecondCall('${escapeHtml(helperId)}')" style="font-size:11.5px; padding:4px 10px; border-color:#1C653C; color:#12592D; font-weight:700; background:#EAF4EE;">
+            ⚡ Demo Call 2 (Continuity Check)
+          </button>
+        </div>
+      </div>
+
+      ${hasMem ? `
+        <div style="background:#fff; border:1px solid #D5E4D8; border-radius:6px; padding:14px; margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+            <span style="font-size:11px; font-weight:700; color:#1C653C; text-transform:uppercase;">
+              🟢 Recalled Facts from Previous Check-in (Recall Budget: Mid)
+            </span>
+            <span style="font-size:11px; color:var(--ink-soft); font-style:italic;">Authority Rule: Current helper statement always takes precedence</span>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px; font-size:12px; line-height:1.5; color:var(--ink); margin-bottom:10px;">
+            ${(ctx.bullet_summary || []).map(b => `<div style="background:#F7F9F7; padding:6px 10px; border-radius:4px; border-left:3px solid #1C653C;">${escapeHtml(b)}</div>`).join('')}
+          </div>
+          <div style="font-size:12px; background:#FFFDF8; border:1px solid #E8DEC8; border-radius:4px; padding:10px 12px; color:var(--ink); line-height:1.5;">
+            <b style="color:#9E520A;">Voice Agent Memory-Aware Opening Hook:</b>
+            <div style="margin-top:3px; font-style:italic; color:var(--ink);">"${escapeHtml(ctx.opening_dialogue_hook)}"</div>
+          </div>
+        </div>
+      ` : `
+        <div style="background:#fff; border:1px solid var(--line); border-radius:6px; padding:12px 14px; font-size:12px; color:var(--ink-soft); line-height:1.5;">
+          <b style="color:var(--ink);">Initial Check-in Status:</b> No previous attendance check-in memory found for <b>${escapeHtml(helper.name)}</b> in bank <code>${escapeHtml(bankId)}</code>.
+          The voice agent will conduct a warm baseline coaching check-in. The outcome will be retained into Hindsight for future calls.
+        </div>
+      `}
+    </div>
+  `;
+}
+
+async function refreshHindsightContext(helperId){
+  const hId = helperId || document.getElementById('vHelper')?.value || 'anita';
+  window.SELECTED_VOICE_HELPER = hId;
+  try {
+    const res = await fetch(`/api/hindsight/context/${encodeURIComponent(hId)}`);
+    if(res.ok){
+      window.HINDSIGHT_CONTEXT = await res.json();
+    }
+  } catch(e) {}
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+}
+
+function onVoiceHelperChange(newHelperId){
+  window.SELECTED_VOICE_HELPER = newHelperId;
+  refreshHindsightContext(newHelperId);
+}
+
+function simulateSecondCall(helperId){
+  const hId = helperId || 'anita';
+  const helper = S.helpers.find(h => h.id === hId) || { name: 'Anita Verma' };
+
+  fetch('/api/hindsight/retain', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      helper_id: hId,
+      helper_name: helper.name,
+      late_count: 2,
+      scenario: 'coaching_call',
+      transcript: [],
+      outcome: {
+        root_cause_identified: 'transit delay on bus route due to road work',
+        specific_commitment: 'take earlier bus at 07:15 AM instead of 07:40 AM',
+        notification_commitment: true,
+        sentiment: 'cooperative'
+      }
+    })
+  }).then(async () => {
+    await refreshHindsightContext(hId);
+    alert(`🧠 Hindsight Memory Bank Seeded for ${helper.name}!\n\nBank ID: helper-${hId}\nRetained Fact: Bus route delay -> Committed to earlier 7:15 AM bus.\n\nNow triggering Call 2: The voice agent will recall this context and open with:\n\n"Last time we spoke, you mentioned that the bus timing was causing delays and you were going to try an earlier bus. How has that been working for you?"`);
+    document.getElementById('callBtn')?.click();
+  });
+}
+
