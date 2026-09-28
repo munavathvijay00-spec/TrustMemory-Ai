@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TrustMemory AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="shell">
+  <aside id="rail">
+    <div class="brand">
+      <div class="mark">TrustMemory AI</div>
+    </div>
+    <div id="authBox" class="auth-box"></div>
+    <nav id="navlist"></nav>
+    <div class="rail-foot">
+      <button id="resetBtn">Reset demo</button>
+    </div>
+  </aside>
+  <div id="main">
+    <div id="ticker"><span class="tk-dot"></span><span id="tickerText">Agent activity will appear here.</span></div>
+    <div id="content"></div>
+  </div>
+</div>
+
+<!-- Authentication Gate Overlay (Login / Create Account with OTP) -->
+<div id="authOverlay" class="auth-overlay"></div>
+
+<!--
+  Plain global-scope scripts loaded in dependency order.
+-->
+
+<!-- shared foundation -->
+<script src="js/state.js"></script>
+<script src="js/format-utils.js"></script>
+<script src="js/activity-log.js"></script>
+
+<!-- the five agents -->
+<script src="js/agents/memory-agent.js"></script>
+<script src="js/agents/decision-agent.js"></script>
+<script src="js/agents/reflection-agent.js"></script>
+<script src="js/agents/matching-agent.js"></script>
+<script src="js/agents/voice-agent.js"></script>
+
+<!-- cross-agent orchestration -->
+<script src="js/event-workflow.js"></script>
+
+<!-- UI: charts + router + one file per page -->
+<script src="js/ui/charts.js"></script>
+<script src="js/ui/render.js"></script>
+<script src="js/ui/dashboard.js"></script>
+<script src="js/ui/helpers-page.js"></script>
+<script src="js/ui/households-page.js"></script>
+<script src="js/ui/placements-page.js"></script>
+<script src="js/ui/memory-page.js"></script>
+<script src="js/ui/matching-page.js"></script>
+<script src="js/ui/insights-page.js"></script>
+<script src="js/ui/voice-page.js"></script>
+<script src="js/ui/activity-page.js"></script>
+<script src="js/ui/architecture-page.js"></script>
+<script src="js/ui/settings-page.js"></script>
+
+<!-- Demo Mode -->
+<script src="js/demo.js"></script>
+
+<!-- boot (must be last) -->
+<script src="js/main.js"></script>
+</body>
+</html>
