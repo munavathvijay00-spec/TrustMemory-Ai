@@ -6,10 +6,11 @@
   "scripts": {
     "start": "node server/index.js",
     "server": "node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "seed:memory": "node server/seed-memory.js",
+    "seed:memory:dry": "node server/seed-memory.js --dry-run"
   },
   "dependencies": {
-    "@vectorize-io/hindsight-client": "^0.10.1",
     "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

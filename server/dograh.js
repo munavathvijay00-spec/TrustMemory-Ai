@@ -57,7 +57,7 @@ async function getDograhWorkflowId() {
 /**
  * Create an interactive live agent session with Dograh AI
  */
-async function createDograhSession({ helper_id, helper_name, late_count, scenario, memory_context }) {
+async function createDograhSession({ helper_name, late_count, scenario }) {
   const workflowId = await getDograhWorkflowId();
   const endpoint = `https://api.dograh.com/api/v1/workflow/${workflowId}/text-chat/sessions`;
 
@@ -66,10 +66,7 @@ async function createDograhSession({ helper_id, helper_name, late_count, scenari
     initial_context: {
       helper_name: helper_name || 'Anita Verma',
       late_count: late_count || 2,
-      scenario: scenario || 'coaching_call',
-      hindsight_memory_context: memory_context?.context_prompt || '',
-      opening_dialogue_hook: memory_context?.opening_dialogue_hook || '',
-      hindsight_bank_id: memory_context?.bank_id || `helper-${helper_id || 'anita'}`
+      scenario: scenario || 'coaching_call'
     }
   };
 
@@ -84,18 +81,14 @@ async function createDograhSession({ helper_id, helper_name, late_count, scenari
 
   if (res.status >= 200 && res.status < 300) {
     const turns = res.data.session_data?.turns || [];
-    let firstAssistantMsg = turns.length > 0 && turns[0].assistant_message ? turns[0].assistant_message.text : 'Hi, this is the agency calling. Is now an okay time to talk for a few minutes?';
-    if (memory_context?.has_previous_memory && memory_context?.opening_dialogue_hook) {
-      firstAssistantMsg = memory_context.opening_dialogue_hook;
-    }
+    const firstAssistantMsg = turns.length > 0 && turns[0].assistant_message ? turns[0].assistant_message.text : 'Hi, this is the agency calling. Is now an okay time to talk for a few minutes?';
     return {
       success: true,
       workflow_id: workflowId,
       run_id: res.data.workflow_run_id,
       state: res.data.state,
       initial_message: firstAssistantMsg,
-      session: res.data,
-      memory_context
+      session: res.data
     };
   }
 
@@ -152,7 +145,7 @@ async function endDograhSession(workflowId, runId) {
 /**
  * Priority 1: Trigger Outbound Call via Dograh or Bland AI
  */
-async function placeOutboundCall({ to, helper_name, household_name, role, late_count, scenario, memory_context }) {
+async function placeOutboundCall({ to, helper_name, household_name, role, late_count, scenario }) {
   let cleanTo = String(to || '').replace(/[^\d+]/g, '');
   if (!cleanTo.startsWith('+') && cleanTo.length === 10) {
     cleanTo = '+91' + cleanTo;
@@ -195,14 +188,10 @@ async function placeOutboundCall({ to, helper_name, household_name, role, late_c
 
   // 2. Check Bland AI fallback
   if (BLAND_API_KEY && BLAND_API_KEY !== 'bland_mock_key' && !BLAND_API_KEY.startsWith('mock')) {
-    const defaultTask = `You are the Voice Agent of TrustMemory AI calling on behalf of an Indian home-care agency. Speak with ${helper_name}, a home-care helper. Conduct a short, warm, respectful check-in about ${late_count || 2} recent late arrivals in the past two weeks. Understand the underlying reason (e.g. bus road work delay), agree on a practical solution (e.g. taking 7:15 AM bus), and confirm that the agency will follow up in two weeks.`;
-    const memoryAugmentedTask = memory_context?.context_prompt ? `${defaultTask}\n\n${memory_context.context_prompt}` : defaultTask;
-    const firstSentence = memory_context?.opening_dialogue_hook || `Hi ${helper_name ? helper_name.split(' ')[0] : 'there'}, this is the agency calling. Is now an okay time to talk for a few minutes?`;
-
     const payload = {
       phone_number: cleanTo,
-      task: memoryAugmentedTask,
-      first_sentence: firstSentence,
+      task: `You are the Voice Agent of TrustMemory AI calling on behalf of an Indian home-care agency. Speak with ${helper_name}, a home-care helper. Conduct a short, warm, respectful check-in about ${late_count || 2} recent late arrivals in the past two weeks. Understand the underlying reason (e.g. bus road work delay), agree on a practical solution (e.g. taking 7:15 AM bus), and confirm that the agency will follow up in two weeks.`,
+      first_sentence: `Hi ${helper_name ? helper_name.split(' ')[0] : 'there'}, this is the agency calling. Is now an okay time to talk for a few minutes?`,
       wait_for_greeting: true,
       voice: 'maya',
       language: 'en-IN'

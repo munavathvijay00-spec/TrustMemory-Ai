@@ -8,29 +8,34 @@ function clamp(val, min, max) {
  * Priority 3: Wire the Decision Agent honestly
  * Formula: churn = clamp(100 - (trust * 0.6) - (recent_positive_experiences * 8) + (recent_late_arrivals * 5), 0, 100)
  */
-function recalculateChurn(helperId, scenario, outcomeSummary, lateCount = 2) {
+function recalculateChurn(helperId, scenario, outcomeSummary, lateCount = 2, outcome = null) {
   const helper = db.prepare('SELECT * FROM helpers WHERE id = ?').get(helperId);
   if (!helper) return null;
 
   const oldChurn = helper.churn;
-  const trust = helper.trust;
+  const lateArrivals = parseInt(lateCount || 0, 10) || 0;
 
-  // Count recent positive experiences from memories table
-  const expMemories = db.prepare(`
-    SELECT content FROM memories 
-    WHERE helper_id = ? AND network = 'experience'
-  `).all(helperId);
-
-  let positiveCount = 0;
-  for (const m of expMemories) {
-    const text = (m.content || '').toLowerCase();
-    if (text.includes('praise') || text.includes('excellent') || text.includes('satisfied') || text.includes('commitment') || text.includes('agreed') || text.includes('positive')) {
-      positiveCount++;
-    }
+  // Delta model: start from the current churn risk and move it by what this call revealed.
+  // Every adjustment is named so the Opinion entry can explain itself.
+  const reasons = [];
+  let delta = 0;
+  if (lateArrivals > 0) { delta += lateArrivals * 3; reasons.push(`${lateArrivals} recent late arrival${lateArrivals === 1 ? '' : 's'} (+${lateArrivals * 3})`); }
+  if (outcome && typeof outcome === 'object') {
+    if (outcome.call_completed === false) { delta += 2; reasons.push('call not completed (+2)'); }
+    if (outcome.root_cause_identified) { delta -= 2; reasons.push('root cause understood (-2)'); }
+    if (outcome.specific_commitment) { delta -= 8; reasons.push('concrete commitment made (-8)'); }
+    if (outcome.notification_commitment) { delta -= 3; reasons.push('agreed to notify household when late (-3)'); }
+    if (outcome.sentiment === 'cooperative') { delta -= 2; reasons.push('cooperative on call (-2)'); }
+    if (outcome.sentiment === 'defensive') { delta += 5; reasons.push('defensive on call (+5)'); }
+    if (outcome.sentiment === 'distressed') { delta += 4; reasons.push('helper distressed (+4)'); }
+    if (outcome.escalations_required) { delta += 10; reasons.push('escalation required (+10)'); }
+  } else {
+    // Legacy path (webhook without structured outcome): keyword scan of the summary.
+    const text = String(outcomeSummary || '').toLowerCase();
+    if (/commit|agreed|will take|will message/.test(text)) { delta -= 8; reasons.push('commitment in summary (-8)'); }
+    if (/escalat/.test(text)) { delta += 10; reasons.push('escalation in summary (+10)'); }
   }
-
-  const lateArrivals = parseInt(lateCount || 2, 10);
-  const calculatedChurn = clamp(100 - (trust * 0.6) - (positiveCount * 8) + (lateArrivals * 5), 0, 100);
+  const calculatedChurn = clamp(oldChurn + delta, 0, 100);
 
   // 1. Update helpers table
   db.prepare('UPDATE helpers SET churn = ? WHERE id = ?').run(calculatedChurn, helperId);
@@ -38,7 +43,7 @@ function recalculateChurn(helperId, scenario, outcomeSummary, lateCount = 2) {
   // 2. Insert Opinion memory row
   const opinionId = 'op_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
   const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
-  const opinionText = `Churn risk recalculated: ${oldChurn} → ${calculatedChurn}. Reason: ${outcomeSummary}.`;
+  const opinionText = `Churn risk recalculated: ${oldChurn} → ${calculatedChurn} (${delta >= 0 ? '+' : ''}${delta}). ${reasons.length ? 'Because: ' + reasons.join('; ') + '. ' : ''}Source: ${outcomeSummary}`;
 
   db.prepare(`
     INSERT INTO memories (id, helper_id, household_id, network, content, created_at)
@@ -57,6 +62,10 @@ function recalculateChurn(helperId, scenario, outcomeSummary, lateCount = 2) {
   return {
     oldChurn,
     newChurn: calculatedChurn,
+    old_churn: oldChurn,
+    new_churn: calculatedChurn,
+    delta,
+    reasons,
     opinionText,
     activityText
   };
