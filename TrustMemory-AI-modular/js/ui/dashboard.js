@@ -65,6 +65,7 @@ function pageDashboard(){
       ${tile(c && c.calls_last_7_days, 'Calls in the last 7 days')}
       ${tile(c && (c.promises_kept_rate == null ? '–' : c.promises_kept_rate + '%'), 'Promises kept')}
     </div>
+    ${typeof requestsCard === 'function' ? requestsCard() : ''}
     ${typeof outreachTodayCard === 'function' ? outreachTodayCard() : ''}
     <div class="section">
       <h2>Follow-ups due</h2>

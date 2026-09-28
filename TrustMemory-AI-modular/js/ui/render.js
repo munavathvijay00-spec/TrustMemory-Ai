@@ -41,7 +41,30 @@ function nav(page, param, opts){
   highlightNav();
 }
 
+let LAST_RENDER_KEY = null;
+let RENDER_HOLD_TIMER = null;
+
+/**
+ * Re-renders of the page you are already on (data arriving, a panel loading) keep your scroll
+ * position; a new page starts at the top (nav does that). The old height is held briefly so a
+ * shorter loading state cannot pull the page up.
+ */
 function renderCurrentPage(){
+  const c = document.getElementById('content');
+  const key = (typeof route !== 'undefined' && route) ? route.page + '/' + (route.param || '') : '';
+  const same = c && key === LAST_RENDER_KEY && typeof window.scrollY === 'number';
+  const y = same ? window.scrollY : 0;
+  if(same && c.style){
+    c.style.minHeight = c.offsetHeight + 'px';
+    if(RENDER_HOLD_TIMER) clearTimeout(RENDER_HOLD_TIMER);
+    RENDER_HOLD_TIMER = setTimeout(() => { c.style.minHeight = ''; }, 1500);
+  }
+  renderCurrentPageInner();
+  LAST_RENDER_KEY = key;
+  if(same && y > 0 && typeof window.scrollTo === 'function') window.scrollTo(0, y);
+}
+
+function renderCurrentPageInner(){
   const c = document.getElementById('content');
   if(!c) return;
 

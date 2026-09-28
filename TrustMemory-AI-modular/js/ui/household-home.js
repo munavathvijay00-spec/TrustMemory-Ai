@@ -44,6 +44,8 @@ function pageHouseholdHome(){
         <div style="font-size:12px; color:var(--ink-soft);">The agency checks in with your helper about anything agreed on a call, and may call you too.</div>
       </div></div>
     </div>
+    ${typeof reqFormCard === 'function' ? reqFormCard('household') : ''}
+    ${typeof reqNotesCard === 'function' ? reqNotesCard() : ''}
     <div class="section">
       <h2>Tell the agency how it is going</h2>
       <div class="card">
@@ -96,6 +98,7 @@ async function submitHouseholdFeedback(event){
 }
 
 function wireHouseholdHome(){
+  if(typeof reqWire === 'function') reqWire();
   const f = document.getElementById('hhFeedbackForm');
   if(f && f.addEventListener) f.addEventListener('submit', submitHouseholdFeedback);
   if(!householdHomeData) loadHouseholdHome();

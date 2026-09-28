@@ -19,6 +19,7 @@ const auth = require('./auth');
 const authRoutes = require('./auth-routes');
 const careRoutes = require('./care-routes');
 const outreachRoutes = require('./outreach-routes');
+const requestRoutes = require('./request-routes');
 
 function createApp({
   port = process.env.PORT || 3000,
@@ -28,6 +29,9 @@ function createApp({
   seedDemo = authEnabled,
 } = {}) {
   const app = express();
+  // Behind a hosting proxy (Render, Azure), use the client's address for rate limits and
+  // sign-in lockouts instead of the proxy's, or one visitor could lock out everyone.
+  if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
 
   if (seedDemo) {
     // Demo accounts for the three roles. Generated passwords are printed once; set
@@ -60,6 +64,7 @@ function createApp({
   app.use(memoryRoutes);
   app.use(careRoutes);      // handover brief, safety signals
   app.use(outreachRoutes);  // today's calls, learning across helpers
+  app.use(requestRoutes);   // requests and preferences from helpers and households
 
   /* ---------------------------------------------------------------- read-only data for the dashboard */
 

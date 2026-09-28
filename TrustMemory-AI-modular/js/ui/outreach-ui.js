@@ -47,11 +47,20 @@ function outreachRing(helperId){
   const purpose = row ? row.purpose : '';
   window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1, scenario: 'coaching_call'}, {helper: helperId, purpose});
   nav('voice');
-  setTimeout(() => {
+  // Use the language she asked to be called in (her saved preference), then ring.
+  const ring = () => {
     const sel = document.getElementById('vHelper');
     if(sel) sel.value = helperId;
+    const lang = document.getElementById('vLanguage');
+    if(lang && window.VOICE_FORM && window.VOICE_FORM.language) lang.value = window.VOICE_FORM.language;
     if(typeof startLiveVoiceSession === 'function') startLiveVoiceSession();
-  }, 250);
+  };
+  const prefs = typeof REQ !== 'undefined' && REQ.helperPrefs;
+  const p = prefs && prefs[helperId];
+  window.VOICE_FORM.language = (p && p.language) || 'en';
+  if(typeof reqLoadHelperPrefs === 'function' && prefs === null){
+    reqLoadHelperPrefs().then(() => { const q = (REQ.helperPrefs || {})[helperId]; window.VOICE_FORM.language = (q && q.language) || 'en'; setTimeout(ring, 150); }).catch(() => setTimeout(ring, 150));
+  } else setTimeout(ring, 250);
 }
 
 function outreachToggleLow(){

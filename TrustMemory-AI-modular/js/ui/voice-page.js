@@ -34,9 +34,10 @@ function pageVoice(){
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:16px;">
         <div>
           <label style="${labelStyle}">Helper</label>
-          <select id="vHelper" onchange="window.VOICE_FORM.helper = this.value" style="${fieldStyle}">
+          <select id="vHelper" onchange="window.VOICE_FORM.helper = this.value; if(typeof reqApplyHelperPref === 'function') reqApplyHelperPref(this.value)" style="${fieldStyle}">
             ${S.helpers.map(h => `<option value="${h.id}" ${VF.helper === h.id ? 'selected' : ''}>${escapeHtml(h.name)}</option>`).join('')}
           </select>
+          ${typeof reqHelperPrefLine === 'function' ? reqHelperPrefLine(VF.helper) : ''}
         </div>
         <div>
           <label style="${labelStyle}">Late arrivals (past two weeks)</label>

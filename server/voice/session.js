@@ -45,6 +45,8 @@ function latencyOf(steps, llmStep, recallStep) {
 
 async function startSession({ helperId = 'anita', scenario = 'coaching_call', lateCount = 2, useMemory = true, language, purpose }) {
   const trace = [];
+  // No language chosen: use the one the helper asked to be called in (set in her own view).
+  if (language === undefined || language === null || language === '') language = require('../requests').preferredLanguage(helperId) || undefined;
   language = callLanguage(language);
   purpose = callPurpose(purpose);
   if (lateCount === undefined || lateCount === null || lateCount === '') lateCount = 2;

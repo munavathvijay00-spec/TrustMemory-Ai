@@ -201,6 +201,7 @@ function startConsole(){
   buildNav();
   highlightNav();
   renderCurrentPage();
+  if(typeof window.scrollTo === 'function') window.scrollTo(0, 0);   // the sign-in screen may have been scrolled
   if(!admin) return;
 
   // Sync real state from SQLite database

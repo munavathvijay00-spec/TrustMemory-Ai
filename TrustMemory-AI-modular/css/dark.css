@@ -1,0 +1,209 @@
+/* =========================================================================
+   Dark mode. The theme is set on <html data-theme="dark|light"> before first paint
+   (see the <head> script and js/ui/theme.js). The brand stays: ink navy surfaces,
+   brass accents, teal and rust for good and bad. Many page templates carry inline
+   light colours, so the second half of this file neutralises those too.
+   ========================================================================= */
+
+/* ---------- toggle buttons (both themes) ---------- */
+.theme-toggle{
+  display:inline-flex; align-items:center; justify-content:center; width:38px; height:34px; flex:none; padding:0;
+  border-radius:8px; cursor:pointer; transition: background .2s, border-color .2s, transform .25s;
+}
+.theme-toggle:active{transform: scale(.94);}
+#rail .rail-foot{display:flex; gap:8px; align-items:stretch;}
+#rail .rail-foot #resetBtn{flex:1; width:auto;}
+#rail .rail-foot #themeToggle{width:38px; background:transparent; border:1px solid rgba(237,233,223,.3); color:#EDE9DF;}
+#rail .rail-foot #themeToggle:hover{border-color:#fff;}
+#themeToggleFloat{
+  display:none; position:fixed; top:14px; right:16px; z-index:80;
+  background: rgba(255,255,255,.85); border:1px solid var(--line-strong); color: var(--ink); box-shadow: var(--shadow-1, 0 1px 3px rgba(0,0,0,.1));
+}
+body.auth-locked #themeToggleFloat{display:inline-flex;}
+.phone-theme{width:32px; height:28px; margin-right:10px; background:transparent; border:1px solid rgba(237,233,223,.3); color:#EDE9DF;}
+.phone-theme:hover{border-color:#fff;}
+
+/* smooth switch, only when the user toggles (theme.js adds .theme-anim for a moment) */
+html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *::after{
+  transition: background-color .35s ease, color .35s ease, border-color .35s ease, fill .35s ease, box-shadow .35s ease !important;
+}
+
+/* ---------- dark tokens ---------- */
+:root[data-theme="dark"]{
+  --paper:#0F151C;
+  --paper-dim:#1A232E;
+  --card:#161E28;
+  --card-2:#1D2733;
+  --ink:#E6E1D6;
+  --ink-soft:#A6B0BD;
+  --ink-faint:#7C8795;
+  --line:rgba(255,255,255,.08);
+  --line-strong:rgba(255,255,255,.16);
+  --brass:#D4A55C;
+  --brass-dark:#E0B874;
+  --brass-tint:rgba(212,165,92,.15);
+  --teal:#6FA893;
+  --teal-tint:rgba(111,168,147,.15);
+  --rust:#D98A7E;
+  --rust-tint:rgba(217,138,126,.15);
+  --amber:#D4A55C;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.35), 0 2px 10px rgba(0,0,0,.25);
+  --shadow-2: 0 2px 4px rgba(0,0,0,.35), 0 14px 34px -10px rgba(0,0,0,.65);
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] body{
+  background:
+    radial-gradient(1200px 600px at 110% -10%, rgba(212,165,92,.07), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(111,168,147,.06), transparent 60%),
+    var(--paper);
+  background-attachment: fixed;
+  color: var(--ink);
+}
+:root[data-theme="dark"] ::selection{background: rgba(212,165,92,.35);}
+
+/* shell */
+:root[data-theme="dark"] #shell{background: linear-gradient(90deg, #0B1016 0, #0B1016 230px, transparent 230px);}
+@media (max-width:760px){ :root[data-theme="dark"] #shell{background:none;} }
+:root[data-theme="dark"] #rail{
+  background:
+    radial-gradient(420px 260px at var(--rx, 50%) var(--ry, 0%), rgba(212,165,92,.12), transparent 70%),
+    linear-gradient(180deg, #111822 0%, #0B1016 100%);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,.06);
+}
+:root[data-theme="dark"] #ticker{background: var(--card); border-color: var(--line);}
+:root[data-theme="dark"] .tm-compact{background: rgba(15,21,28,.82); border-color: var(--line); color: var(--ink);}
+:root[data-theme="dark"] #themeToggleFloat{background: rgba(22,30,40,.9); color: var(--ink);}
+:root[data-theme="dark"] #menubtn{background: var(--card-2); color: var(--ink); border-color: var(--line-strong);}
+
+/* surfaces */
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .metric,
+:root[data-theme="dark"] .candidate,
+:root[data-theme="dark"] .scenario-btn,
+:root[data-theme="dark"] .callcard,
+:root[data-theme="dark"] .lane .node,
+:root[data-theme="dark"] .netcyl,
+:root[data-theme="dark"] .auth-card,
+:root[data-theme="dark"] .auth-modal{background: var(--card); border-color: var(--line); color: var(--ink);}
+:root[data-theme="dark"] .candidate.top{background: linear-gradient(180deg, var(--brass-tint), var(--card) 70%); border-color: var(--brass);}
+:root[data-theme="dark"] .lane{background: var(--card-2); border-color: var(--line-strong);}
+:root[data-theme="dark"] .lane .node.cyl{background: var(--brass-tint);}
+:root[data-theme="dark"] .pagehead{background: linear-gradient(135deg, #18212C 0%, #1B2531 100%); border-color: var(--line);}
+:root[data-theme="dark"] .pagehead h1{background: linear-gradient(90deg, #F2EEE6 0%, #F2EEE6 55%, #E0B874 100%); -webkit-background-clip:text; background-clip:text; color:transparent;}
+:root[data-theme="dark"] .pagehead::after{opacity:.55;}
+:root[data-theme="dark"] .tm-hero{background:
+    radial-gradient(500px 300px at 85% 40%, rgba(111,168,147,.18), transparent 70%),
+    radial-gradient(400px 240px at 70% 90%, rgba(212,165,92,.14), transparent 70%),
+    linear-gradient(135deg, #17202B, #1E2A38); border:1px solid rgba(255,255,255,.06);}
+:root[data-theme="dark"] .detail-head{background: linear-gradient(135deg, #17202B, #22303F); border:1px solid rgba(255,255,255,.06);}
+:root[data-theme="dark"] .why{background: var(--card-2);}
+:root[data-theme="dark"] .narration{background:#0B1016; border:1px solid var(--line);}
+:root[data-theme="dark"] .callcard .transcript{background: var(--card-2);}
+:root[data-theme="dark"] .compare .box.old{background: var(--card-2);}
+:root[data-theme="dark"] .mm-body::after{background: linear-gradient(transparent, var(--card));}
+:root[data-theme="dark"] .empty .empty-ico{background: var(--brass-tint); color: var(--brass-dark);}
+:root[data-theme="dark"] .m-ring .track{stroke: rgba(255,255,255,.08);}
+:root[data-theme="dark"] .tm-skel{background: var(--card-2);}
+:root[data-theme="dark"] .tm-skel::after{background: linear-gradient(90deg, transparent, rgba(255,255,255,.08), transparent);}
+:root[data-theme="dark"] .alert:hover{background: linear-gradient(90deg, rgba(212,165,92,.07), transparent 70%);}
+:root[data-theme="dark"] .tl-item::before{border-color: var(--paper);}
+
+/* agent tags */
+:root[data-theme="dark"] .agent.mem{background: rgba(122,160,221,.16); color:#9DBBE8;}
+:root[data-theme="dark"] .agent.ref{background: rgba(176,130,196,.16); color:#C9A4DA;}
+
+/* buttons */
+:root[data-theme="dark"] .btn{background: var(--card-2); color: var(--ink); border-color: var(--line-strong);}
+:root[data-theme="dark"] .btn:hover{border-color: var(--brass); box-shadow: 0 4px 14px -6px rgba(0,0,0,.6);}
+:root[data-theme="dark"] .btn.primary{background:#2C3A4B; color:#F4F1EA; border-color:#3B4C60;}
+:root[data-theme="dark"] .btn.primary:hover{background:#35465A;}
+:root[data-theme="dark"] .btn.brass{background: var(--brass); color:#1A1308; border-color: var(--brass);}
+:root[data-theme="dark"] .btn.brass:hover{background:#E0B874;}
+:root[data-theme="dark"] .btn.danger{color:#F0B0A6;}
+:root[data-theme="dark"] .tabs{border-color: var(--line);}
+:root[data-theme="dark"] .tabs button.active{color: var(--ink);}
+
+/* forms */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea{background: var(--card-2) !important; color: var(--ink) !important; border-color: var(--line-strong) !important;}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder{color: #6F7A88;}
+:root[data-theme="dark"] input[type=checkbox],
+:root[data-theme="dark"] input[type=radio]{accent-color: var(--brass);}
+:root[data-theme="dark"] option{background: #1D2733; color: var(--ink);}
+
+/* tables */
+:root[data-theme="dark"] table{color: var(--ink);}
+:root[data-theme="dark"] th, :root[data-theme="dark"] td{border-color: var(--line) !important;}
+
+/* badges keep their tint via tokens; neutral needs a touch more contrast */
+:root[data-theme="dark"] .badge.neutral{background: rgba(255,255,255,.07); color: var(--ink-soft);}
+:root[data-theme="dark"] .badge.ok{color:#8FC2AE;}
+:root[data-theme="dark"] .badge.bad{color:#EBA59A;}
+
+/* toasts are already dark; lift them off the page */
+:root[data-theme="dark"] .tm-toast{background: rgba(29,39,51,.96); border-color: rgba(255,255,255,.1);}
+
+/* ---------- inline light colours written by page templates ---------- */
+/* white and near-white panels */
+:root[data-theme="dark"] [style*="background:#fff" i],
+:root[data-theme="dark"] [style*="background: #fff" i],
+:root[data-theme="dark"] [style*="background:white" i],
+:root[data-theme="dark"] [style*="background:#FAFBF9" i],
+:root[data-theme="dark"] [style*="background:#FBFAF6" i],
+:root[data-theme="dark"] [style*="background:#FAF8F5" i],
+:root[data-theme="dark"] [style*="background:#F7F8F6" i],
+:root[data-theme="dark"] [style*="background:#F3F4F1" i],
+:root[data-theme="dark"] [style*="background:#F7F4EC" i]{background: var(--card-2) !important;}
+/* tinted panels: green, amber, red, brass */
+:root[data-theme="dark"] [style*="background:#F4F8F5" i],
+:root[data-theme="dark"] [style*="background:#F5F8F6" i],
+:root[data-theme="dark"] [style*="background:#EAF4EE" i],
+:root[data-theme="dark"] [style*="background:#E6F4EA" i]{background: rgba(111,168,147,.12) !important;}
+:root[data-theme="dark"] [style*="background:#FFF6E5" i],
+:root[data-theme="dark"] [style*="background:#F3E8D6" i]{background: rgba(212,165,92,.12) !important;}
+:root[data-theme="dark"] [style*="background:#F4E3E0" i],
+:root[data-theme="dark"] [style*="background:#F8E6E3" i]{background: rgba(217,138,126,.12) !important;}
+/* light borders */
+:root[data-theme="dark"] [style*="solid #E5EADF" i],
+:root[data-theme="dark"] [style*="solid #CBE1D2" i],
+:root[data-theme="dark"] [style*="solid #CFE0DA" i],
+:root[data-theme="dark"] [style*="solid #D5E4D8" i],
+:root[data-theme="dark"] [style*="dashed #C3D9C7" i]{border-color: rgba(111,168,147,.28) !important;}
+:root[data-theme="dark"] [style*="solid #E0CFAE" i],
+:root[data-theme="dark"] [style*="solid #E6C98F" i]{border-color: rgba(212,165,92,.32) !important;}
+:root[data-theme="dark"] [style*="solid #E29F96" i]{border-color: rgba(217,138,126,.35) !important;}
+/* dark text colours that disappear on a dark page */
+:root[data-theme="dark"] [style*="color:#5B6572" i],
+:root[data-theme="dark"] [style*="color: #5B6572" i]{color: var(--ink-soft) !important;}
+:root[data-theme="dark"] [style*="color:#1C2530" i],
+:root[data-theme="dark"] [style*="color: #1C2530" i],
+:root[data-theme="dark"] [style*="color:#3c4043" i]{color: var(--ink) !important;}
+:root[data-theme="dark"] [style*="color:#8F6A2E" i]{color: #E0B874 !important;}
+:root[data-theme="dark"] [style*="color:#1C653C" i]{color: #7CC49A !important;}
+:root[data-theme="dark"] [style*="color:#3F6659" i]{color: #8FC2AE !important;}
+:root[data-theme="dark"] [style*="color:#A6453A" i],
+:root[data-theme="dark"] [style*="color:#9E3224" i],
+:root[data-theme="dark"] [style*="color:#7A3A32" i]{color: #E8A194 !important;}
+:root[data-theme="dark"] [style*="color:#9E520A" i]{color: #E3A868 !important;}
+:root[data-theme="dark"] [style*="color:#31507A" i]{color: #9DBBE8 !important;}
+/* inline buttons that set a border colour but no background (e.g. "✓ Accurate") keep the dark button face */
+:root[data-theme="dark"] .btn[style*="border-color:#1C653C" i]{border-color: #3E8F63 !important;}
+:root[data-theme="dark"] .btn[style*="border-color:#A6453A" i]{border-color: #B8645A !important;}
+
+/* ---------- helper phone screen (helper.html, voice-phone.css) ---------- */
+:root[data-theme="dark"] .brand-tag{background: rgba(212,165,92,.18); color:#E9C88E;}
+:root[data-theme="dark"] .app-header{background:#0B1016; border-bottom-color: rgba(255,255,255,.08);}
+:root[data-theme="dark"] .helper-avatar{background: linear-gradient(135deg, #2C3A4B, #1D2733); color:#F4F1EA; box-shadow: 0 0 0 3px rgba(212,165,92,.25);}
+:root[data-theme="dark"] .helper-call-screen{background: var(--card); border-color: var(--line); box-shadow: var(--shadow-2);}
+:root[data-theme="dark"] .hp-line{background: var(--card-2) !important; border-color: var(--line) !important; color: var(--ink);}
+:root[data-theme="dark"] .hp-line .who{color: var(--brass-dark) !important;}
+:root[data-theme="dark"] .hp-line.me .who{color: #8FC2AE !important;}
+:root[data-theme="dark"] .helper-call-status{background: var(--card-2); color: var(--ink-soft);}
+:root[data-theme="dark"] .helper-caller-title,
+:root[data-theme="dark"] .timer-val{color: var(--ink);}
+:root[data-theme="dark"] #hpConsent{background: var(--card-2) !important; border-color: var(--line) !important; color: var(--ink-soft) !important;}
+:root[data-theme="dark"] .quick-reply-btn{background: var(--card-2); color: var(--ink); border-color: var(--line-strong);}
+:root[data-theme="dark"] .quick-reply-btn:hover{background: var(--card);}

@@ -1,0 +1,25 @@
+# Render blueprint: one Docker web service, deployed from the dev branch.
+# Secrets marked sync: false are entered once in the Render dashboard, never committed.
+services:
+  - type: web
+    name: trustmemory-ai
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: dev
+    healthCheckPath: /api/health
+    envVars:
+      - key: GROQ_API_KEYS
+        sync: false
+      - key: HINDSIGHT_API_KEY
+        sync: false
+      - key: HINDSIGHT_BANK_ID
+        value: trustmemory-agency
+      - key: DEMO_COORDINATOR_PASSWORD
+        sync: false
+      - key: DEMO_HELPER_PASSWORD
+        sync: false
+      - key: DEMO_HOUSEHOLD_PASSWORD
+        sync: false
+      - key: TRUST_PROXY
+        value: "1"

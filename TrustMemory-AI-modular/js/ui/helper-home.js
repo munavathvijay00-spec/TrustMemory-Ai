@@ -51,6 +51,11 @@ function pageHelperHome(){
         <a class="btn primary" href="helper.html?helper=${encodeURIComponent(h.id)}">Open my call screen</a>
       </div>
     </div>
+    ${typeof reqFormCard === 'function' ? reqFormCard('helper') : ''}
+    <div class="grid g2">
+      <div>${typeof reqFestivalCard === 'function' ? reqFestivalCard() : ''}</div>
+      <div>${typeof reqPrefsCard === 'function' ? reqPrefsCard() : ''}</div>
+    </div>
     <div class="grid g2">
       <div class="section"><h2>What you agreed</h2><div class="card">${promises}${resolved}</div></div>
       <div class="section"><h2>Your recent calls</h2><div class="card">${calls}</div></div>
@@ -64,6 +69,7 @@ function pageHelperHome(){
 }
 
 async function wireHelperHome(){
+  if(typeof reqWire === 'function') reqWire();
   if(helperHomeData) return;
   try {
     const res = await fetch('/api/me/helper');
