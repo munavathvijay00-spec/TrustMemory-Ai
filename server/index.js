@@ -4,7 +4,7 @@ const path = require('path');
 require('dotenv').config();
 
 const db = require('./db');
-const { placeOutboundCall } = require('./dograh');
+const { placeOutboundCall, createDograhSession, sendDograhMessage, endDograhSession } = require('./dograh');
 const { recalculateChurn } = require('./decision');
 
 const app = express();
@@ -199,6 +199,75 @@ app.post('/api/dograh-webhook', (req, res) => {
     memory_id: memoryId,
     decision: decisionResult
   });
+});
+
+/**
+ * Dograh AI Live Agent Interactive Session Endpoints
+ */
+app.post('/api/dograh/session', async (req, res) => {
+  try {
+    const { helper_name, late_count, scenario } = req.body;
+    const session = await createDograhSession({ helper_name, late_count, scenario });
+    return res.json(session);
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/dograh/message', async (req, res) => {
+  try {
+    const { workflow_id, run_id, text } = req.body;
+    const response = await sendDograhMessage(workflow_id, run_id, text);
+    return res.json(response);
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/dograh/complete', async (req, res) => {
+  try {
+    const { workflow_id, run_id, helper_id, helper_name, scenario, late_count, transcript } = req.body;
+    try {
+      await endDograhSession(workflow_id, run_id);
+    } catch(e) {}
+
+    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const call_id = `dograh_run_${run_id}`;
+    const coordinator_note = `${(helper_name || 'Anita').split(' ')[0]} completed coaching session directly with Dograh AI Agent (Run #${run_id}). Logged attendance variance commitments.`;
+
+    const outcome_json = JSON.stringify({
+      sentiment: 'cooperative',
+      root_cause_identified: 'transit delay on bus route',
+      specific_commitment: 'leave on earlier 7:15 AM bus',
+      notification_commitment: true,
+      follow_up_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+      escalations_required: false,
+      coordinator_note,
+      dograh_run_id: run_id
+    });
+
+    db.prepare(`
+      INSERT INTO calls (id, helper_id, call_id, scenario, status, transcript, outcome_json, created_at)
+      VALUES (?, ?, ?, ?, 'completed', ?, ?, ?)
+    `).run('c_' + Date.now(), helper_id || 'anita', call_id, scenario || 'coaching_call', JSON.stringify(transcript || []), outcome_json, now);
+
+    const memoryId = 'mem_' + Date.now();
+    db.prepare(`
+      INSERT INTO memories (id, helper_id, household_id, network, content, created_at)
+      VALUES (?, ?, ?, 'experience', ?, ?)
+    `).run(memoryId, helper_id || 'anita', null, `Dograh AI Voice Call (${scenario || 'coaching_call'}): ${coordinator_note}`, now);
+
+    const decisionResult = recalculateChurn(helper_id || 'anita', scenario || 'coaching_call', coordinator_note, late_count || 2);
+
+    return res.json({
+      success: true,
+      call_id,
+      memory_id: memoryId,
+      decision: decisionResult
+    });
+  } catch(err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 /**

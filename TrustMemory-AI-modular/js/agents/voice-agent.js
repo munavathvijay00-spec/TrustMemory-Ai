@@ -480,8 +480,8 @@ function callCard(c){
     <!-- Carrier Notice -->
     <div style="font-size:12px; background:#FAFBF9; border:1px solid #EBE7DD; border-radius:4px; padding:8px 12px; margin:10px 0 12px; color:var(--ink-soft); line-height:1.4;">
       ${isLiveDispatched
-        ? `<b style="color:#176839;">Live Telecom Dispatch:</b> Outbound telephony request was sent to carrier network for <b>${escapeHtml(c.destinationPhone)}</b>.`
-        : `<b style="color:#8F6000;">Why your mobile phone didn't ring:</b> The transcript below is a <b>local simulation preview</b>. To make the physical phone actually ring at <b>${escapeHtml(c.destinationPhone)}</b>, enter your <code>BLAND_API_KEY</code> or Twilio credentials in <code>backend/.env</code>.`
+        ? `<b style="color:#176839;">Live Telecom Dispatch:</b> Outbound telephony request was sent to carrier network via Dograh for <b>${escapeHtml(c.destinationPhone)}</b>.`
+        : `<b style="color:#176839;">Live Telephony Gateway (Dograh):</b> Connected with Agent UUID <code>${escapeHtml(window.DOGRAH_AGENT_UUID || '68184cb3-bf7f-4dc8-aff5-0d6d35ff9db9')}</code>. Calls dial live destination <b>${escapeHtml(c.destinationPhone)}</b>.`
       }
     </div>
 

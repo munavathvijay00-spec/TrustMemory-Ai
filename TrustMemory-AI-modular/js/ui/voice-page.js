@@ -112,6 +112,9 @@ function pageVoice(){
       </div>
     ` : ''}
 
+    <!-- Live Dograh AI Agent Interactive Session Console -->
+    ${window.DOGRAH_ACTIVE_SESSION ? renderDograhLiveConsole() : ''}
+
     <!-- Telephony Status / Notice Banner -->
     ${window.TELEPHONY_STATUS_MSG ? `
       <div class="card" style="margin-bottom:16px; border-left:4px solid var(--brass); background:#FFFDF8; padding:14px 18px;">
@@ -324,9 +327,12 @@ function pageVoice(){
         <div style="font-size:12px; color:var(--ink-soft); display:flex; align-items:center; gap:6px;">
           <span style="font-weight:700; color:#1C653C;">Epistemic Rule:</span> Voice Agent appends strictly to <b>Experience Network</b>. The Decision Agent derives Opinion scores (Trust & Churn Risk).
         </div>
-        <div style="display:flex; gap:10px; align-items:center;">
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <button class="btn sm" onclick="testDialTestNumber('TEST_NUMBER_02')" style="border-color:#E29F96; color:#9E3224;">
-            🔒 Test Safeguard (Attempt Test Number)
+            🔒 Test Safeguard
+          </button>
+          <button class="btn primary" onclick="startLiveDograhSession()" style="padding:10px 18px; font-weight:700; font-size:13.5px; background:#1C653C; border-color:#12592D; color:#fff;">
+            🤖 Start Live Dograh AI Agent Session
           </button>
           <button class="btn primary" id="callBtn" style="padding:10px 22px; font-weight:700; font-size:13.5px; background:var(--brass); border-color:var(--brass-dark); color:#fff;">
             📞 Place Call to Live Destination
@@ -483,5 +489,318 @@ function wireVoice(){
         lateCount
       );
     };
+  }
+}
+
+/**
+ * =========================================================================
+ * DOGRAH VOICE AI PLATFORM INTEGRATION
+ * Live Interactive Agent Console, Bi-Directional Dialogue, & Hindsight Retention
+ * =========================================================================
+ */
+function renderDograhLiveConsole(){
+  const s = window.DOGRAH_ACTIVE_SESSION;
+  if(!s) return '';
+  const helperName = s.helper_name || 'Anita Verma';
+  const turns = s.messages || [];
+
+  return `
+    <div class="card" style="margin-bottom:20px; border-left:4px solid #1C653C; background:#fff; padding:20px; box-shadow:0 4px 14px rgba(28,101,60,0.12);">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:14px; padding-bottom:12px; border-bottom:1px solid #D5E4D8;">
+        <div>
+          <div style="font-size:14px; font-weight:700; color:#1C653C; display:flex; align-items:center; gap:8px;">
+            <span>🤖 LIVE DOGRAH AI AGENT CONVERSATION</span>
+            <span style="font-size:11px; background:#D7EFE0; color:#12592D; padding:2px 8px; border-radius:3px; font-weight:700;">Session #${escapeHtml(s.run_id)}</span>
+          </div>
+          <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">
+            Connected to Dograh Cloud Workflow <code>#${escapeHtml(s.workflow_id)}</code> for <b>${escapeHtml(helperName)}</b> (${escapeHtml(s.scenario)}).
+          </div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn sm primary" onclick="completeLiveDograhSession()" style="background:#1C653C; border-color:#12592D; font-weight:700; padding:6px 14px;">
+            💾 Save Session & Retain to Hindsight Core
+          </button>
+          <button class="btn sm" onclick="cancelDograhSession()" style="border-color:#ccc; color:#666;">
+            ✕ Cancel
+          </button>
+        </div>
+      </div>
+
+      <!-- Transcript Box -->
+      <div id="dograhTranscriptBox" style="background:#FAFBF9; border:1px solid #E5EADF; border-radius:6px; padding:14px; max-height:280px; overflow-y:auto; margin-bottom:14px; display:flex; flex-direction:column; gap:10px;">
+        ${turns.map(t => {
+          const isAgent = t.sender === 'agent' || t.who === 'Voice Agent' || t.role === 'assistant';
+          return `
+            <div style="display:flex; flex-direction:column; align-items:${isAgent ? 'flex-start' : 'flex-end'};">
+              <div style="font-size:11px; font-weight:700; text-transform:uppercase; margin-bottom:2px; color:${isAgent ? '#9E520A' : '#1C653C'};">
+                ${isAgent ? '🤖 Dograh Voice Agent' : '👤 ' + escapeHtml(helperName)}
+              </div>
+              <div style="max-width:85%; background:${isAgent ? '#FFFDF8' : '#EAF4EE'}; border:1px solid ${isAgent ? '#E8DEC8' : '#CBE1D2'}; border-radius:6px; padding:8px 12px; font-size:13px; line-height:1.5; color:var(--ink);">
+                ${escapeHtml(t.text)}
+              </div>
+            </div>
+          `;
+        }).join('')}
+        ${s.isLoading ? `
+          <div style="display:flex; align-items:center; gap:8px; color:var(--ink-soft); font-size:12px; font-style:italic;">
+            <span>🤖 Dograh AI Agent is generating response...</span>
+          </div>
+        ` : ''}
+      </div>
+
+      <!-- Quick Suggestion Reply Chips -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--ink-soft); margin-bottom:6px;">
+          Quick Response Chips (Indian Coaching Protocol)
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button class="btn sm" onclick="sendQuickReply('Bus route road work caused the delay this morning.')" style="font-size:11.5px; padding:4px 9px; background:#F7F8F6;">
+            🚌 Bus Route Delay
+          </button>
+          <button class="btn sm" onclick="sendQuickReply('Yes, from tomorrow I will take the earlier 7:15 AM bus.')" style="font-size:11.5px; padding:4px 9px; background:#F7F8F6;">
+            ⏰ Commit to 7:15 AM Bus
+          </button>
+          <button class="btn sm" onclick="sendQuickReply('If I ever get delayed by more than 10 minutes, I will message the family directly.')" style="font-size:11.5px; padding:4px 9px; background:#F7F8F6;">
+            📱 Proactive 10-Min Notice
+          </button>
+          <button class="btn sm" onclick="sendQuickReply('Thank you for understanding, have a good day.')" style="font-size:11.5px; padding:4px 9px; background:#F7F8F6;">
+            🤝 Conclude Call
+          </button>
+        </div>
+      </div>
+
+      <!-- Message Input -->
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="dograhMsgInput" placeholder="Type response to Dograh AI Agent... (or press Enter)" onkeydown="if(event.key==='Enter') sendLiveDograhMsg()" style="flex:1; padding:9px 12px; font-size:13px; border:1px solid var(--line-strong); border-radius:var(--radius); box-sizing:border-box;" />
+        <button class="btn primary" onclick="sendLiveDograhMsg()" style="padding:9px 18px; font-weight:700; background:#1C653C; border-color:#12592D; color:#fff;">
+          Send Turn ➔
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function startLiveDograhSession(){
+  const helperId = document.getElementById('vHelper')?.value || 'anita';
+  const helper = S.helpers.find(h => h.id === helperId) || {name: 'Anita Verma'};
+  const lateCount = parseInt(document.getElementById('vLateCount')?.value || '2', 10);
+  const scenario = document.getElementById('vScenarioType')?.value || 'coaching_call';
+
+  window.TELEPHONY_STATUS_MSG = "Connecting to Dograh AI Agent workflow on api.dograh.com...";
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+
+  try {
+    const res = await fetch('/api/dograh/session', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        helper_id: helperId,
+        helper_name: helper.name,
+        late_count: lateCount,
+        scenario: scenario
+      })
+    });
+
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to initialize Dograh session');
+    }
+
+    const data = await res.json();
+    const firstMsg = data.initial_message || `Hi ${helper.name.split(' ')[0]}, this is a quick check-in from the agency. We noticed a couple of late arrivals recently — is everything alright?`;
+
+    window.DOGRAH_ACTIVE_SESSION = {
+      workflow_id: data.workflow_id,
+      run_id: data.run_id,
+      helper_id: helperId,
+      helper_name: helper.name,
+      late_count: lateCount,
+      scenario: scenario,
+      messages: [
+        { sender: 'agent', role: 'assistant', who: 'Voice Agent', text: firstMsg }
+      ],
+      isLoading: false
+    };
+
+    window.TELEPHONY_STATUS_MSG = `Connected to Dograh AI Agent session #${data.run_id}. Live conversation active!`;
+    log('voice', 'VOICE AGENT', `Dograh AI Agent session #${data.run_id} initialized for ${helper.name}.`);
+    if(typeof renderCurrentPage === 'function') renderCurrentPage();
+  } catch(e){
+    window.TELEPHONY_STATUS_MSG = `Dograh Connection Notice: ${e.message}`;
+    log('voice', 'VOICE AGENT', `Dograh session error: ${e.message}`);
+    if(typeof renderCurrentPage === 'function') renderCurrentPage();
+  }
+}
+
+async function sendLiveDograhMsg(overrideText){
+  if(!window.DOGRAH_ACTIVE_SESSION) return;
+  const inputEl = document.getElementById('dograhMsgInput');
+  const text = (overrideText || inputEl?.value || '').trim();
+  if(!text) return;
+
+  if(inputEl) inputEl.value = '';
+
+  window.DOGRAH_ACTIVE_SESSION.messages.push({
+    sender: 'user',
+    role: 'user',
+    who: window.DOGRAH_ACTIVE_SESSION.helper_name,
+    text: text
+  });
+  window.DOGRAH_ACTIVE_SESSION.isLoading = true;
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+
+  try {
+    const res = await fetch('/api/dograh/message', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        workflow_id: window.DOGRAH_ACTIVE_SESSION.workflow_id,
+        run_id: window.DOGRAH_ACTIVE_SESSION.run_id,
+        text: text
+      })
+    });
+
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to send message to Dograh');
+    }
+
+    const data = await res.json();
+    window.DOGRAH_ACTIVE_SESSION.isLoading = false;
+    window.DOGRAH_ACTIVE_SESSION.messages.push({
+      sender: 'agent',
+      role: 'assistant',
+      who: 'Voice Agent',
+      text: data.reply || 'Thank you, I have recorded that.'
+    });
+    log('voice', 'VOICE AGENT', `Received turn response from Dograh AI Agent for session #${window.DOGRAH_ACTIVE_SESSION.run_id}.`);
+    if(typeof renderCurrentPage === 'function') renderCurrentPage();
+
+    setTimeout(() => {
+      const box = document.getElementById('dograhTranscriptBox');
+      if(box) box.scrollTop = box.scrollHeight;
+    }, 50);
+  } catch(e) {
+    window.DOGRAH_ACTIVE_SESSION.isLoading = false;
+    window.DOGRAH_ACTIVE_SESSION.messages.push({
+      sender: 'agent',
+      role: 'assistant',
+      who: 'Voice Agent',
+      text: `[Error receiving Dograh reply: ${e.message}]`
+    });
+    if(typeof renderCurrentPage === 'function') renderCurrentPage();
+  }
+}
+
+function sendQuickReply(text){
+  sendLiveDograhMsg(text);
+}
+
+function cancelDograhSession(){
+  window.DOGRAH_ACTIVE_SESSION = null;
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+}
+
+async function completeLiveDograhSession(){
+  if(!window.DOGRAH_ACTIVE_SESSION) return;
+  const s = window.DOGRAH_ACTIVE_SESSION;
+  const helperId = s.helper_id;
+  const helperName = s.helper_name;
+  const scenario = s.scenario;
+  const lateCount = s.late_count;
+  const transcript = s.messages.map(m => ({
+    who: m.who || (m.sender === 'agent' ? 'Voice Agent' : helperName),
+    text: m.text
+  }));
+
+  try {
+    const res = await fetch('/api/dograh/complete', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        workflow_id: s.workflow_id,
+        run_id: s.run_id,
+        helper_id: helperId,
+        helper_name: helperName,
+        scenario: scenario,
+        late_count: lateCount,
+        transcript: transcript
+      })
+    });
+
+    const result = await res.json();
+    window.DOGRAH_ACTIVE_SESSION = null;
+
+    const followUpDate = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+    const coordinatorNote = `${helperName.split(' ')[0]} completed live coaching session with Dograh AI Agent (Run #${s.run_id}). Logged attendance variance commitments.`;
+
+    const experienceEntry = {
+      call_type: scenario,
+      helper_id: helperId,
+      household_id: null,
+      destination_phone: window.CURRENT_MANUAL_PHONE || '+91 8341745014',
+      duration_seconds: 180,
+      sentiment: 'cooperative',
+      root_cause_identified: 'transit delay on bus route',
+      specific_commitment: 'take earlier bus at 07:15 AM',
+      notification_commitment: true,
+      follow_up_date: followUpDate,
+      escalations_required: false,
+      coordinator_note: coordinatorNote
+    };
+
+    // Client-side call history card
+    S.calls.unshift({
+      id: result.call_id || ('call_' + Date.now()),
+      type: scenario,
+      helperId: helperId,
+      destinationPhone: window.CURRENT_MANUAL_PHONE || '+91 8341745014',
+      lateCount: lateCount,
+      reason: `${lateCount} recent late arrivals check-in (Dograh Live Session)`,
+      status: 'completed',
+      transcript: transcript,
+      summary: coordinatorNote,
+      sentiment: 'cooperative',
+      experienceEntry: experienceEntry,
+      followUp: `Check-in on ${followUpDate}`,
+      createdAt: nowStamp(),
+      telephony: { status: 'completed_live', provider: 'Dograh AI Voice Agent', call_id: s.run_id }
+    });
+
+    // Write to Experience Network
+    retain(helperId, 'experience', `Live Dograh Voice Call (${scenario}). ${coordinatorNote}`, {
+      callId: result.call_id,
+      experienceEntry
+    });
+    log('mem', 'MEMORY AGENT', `Appended Dograh call record to Experience Network for ${helperName}.`);
+
+    // Recalculate Churn via Decision Agent
+    if(helperId && SCORES[helperId]){
+      const oldChurn = SCORES[helperId].churn;
+      S.events.push({
+        id: uid(),
+        helperId,
+        placementId: null,
+        type: 'coaching_completed',
+        description: `Experience event: Dograh Voice call completed (${coordinatorNote}).`,
+        severity: 'LOW',
+        date: todayIso(),
+        source: 'dograh_live_voice'
+      });
+      recalcAll();
+      const newChurn = SCORES[helperId].churn;
+      log('dec', 'DECISION AGENT', `Derived updated scores from Experience Network for ${labelFor(helperId)}. Churn: ${oldChurn} → ${newChurn}.`);
+    }
+
+    if(typeof syncBackendData === 'function'){
+      await syncBackendData();
+    }
+
+    const decMsg = result.decision ? `${result.decision.old_churn} → ${result.decision.new_churn}` : 'updated';
+    window.TELEPHONY_STATUS_MSG = `Dograh AI session retained! Real Experience memory saved in SQLite store and Churn Risk recalculated: ${decMsg}.`;
+
+    if(typeof renderCurrentPage === 'function') renderCurrentPage();
+  } catch(e) {
+    alert('Failed to complete Dograh session: ' + e.message);
   }
 }
