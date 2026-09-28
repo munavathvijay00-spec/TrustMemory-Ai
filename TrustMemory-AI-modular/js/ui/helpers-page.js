@@ -134,13 +134,8 @@ function handleCreateHelper(event){
   const colors = ['#8F6A2E', '#3F6659', '#5B4A8F', '#A6453A', '#31507A'];
   const color = colors[S.helpers.length % colors.length];
 
-  // Set default role scores based on selected skills
-  const roleScores = {
-    elder_care: skills.includes('elder_care') ? 80 + Math.min(exp * 2, 15) : 45,
-    child_care: skills.includes('child_care') ? 80 + Math.min(exp * 2, 15) : 45,
-    cleaning: skills.includes('cleaning') ? 80 + Math.min(exp * 2, 15) : 50,
-    cooking: skills.includes('cooking') ? 75 + Math.min(exp * 2, 15) : 40,
-  };
+  // No invented suitability scores: fit is judged from memory evidence on the Matching page.
+  const roleScores = {};
 
   const newHelper = {
     id,
@@ -165,8 +160,6 @@ function handleCreateHelper(event){
   }
 
   // 2. Retain initial profile Opinion
-  const bestRole = Object.entries(roleScores).sort((a,b)=>b[1]-a[1])[0];
-  retain(id, 'opinion', `Candidate profile established. Primary suitability assessed for ${roleLabel(bestRole[0])} (${bestRole[1]}/100).`, {roleScores});
 
   // 3. Initialize scores
   SCORES[id] = {
@@ -232,9 +225,10 @@ function pageHelperDetail(id){
       <span class="badge ${churnBadgeClass(sc.churn)}" style="margin-top:8px;">${sc.churn >= 65 ? 'Critical' : sc.churn >= 40 ? 'Elevated' : 'Low'}</span>
     </div>
     <div class="metric">
-      <div class="label">Role-specific fit</div>
+      <div class="label">Roles</div>
       <div style="margin-top:8px; font-size:12px;">
-        ${Object.entries(h.roleScores).map(([k,v]) => `<div class="kv"><span class="k">${roleLabel(k)}</span><span>${v}/100</span></div>`).join('')}
+        ${(h.skills || []).map(k => `<div class="kv"><span class="k">${roleLabel(k)}</span></div>`).join('') || '<span style="color:var(--ink-soft);">Not recorded</span>'}
+        <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">Fit for a household is judged from memory on the Matching page.</div>
       </div>
     </div>
   </div>
@@ -246,6 +240,8 @@ function pageHelperDetail(id){
         ${typeof renderBriefBlock === 'function' ? renderBriefBlock('helper', h.id) : ''}
       </div>
       <div>
+        ${typeof renderCommitmentsBlock === 'function' ? renderCommitmentsBlock(h.id) : ''}
+        <div style="height:12px;"></div>
         ${typeof renderMentalModelBlock === 'function' ? renderMentalModelBlock('helper', h.id) : ''}
       </div>
     </div>
@@ -258,19 +254,14 @@ function pageHelperDetail(id){
       </div></div>
 
       <div class="hr"></div>
-      <h2>Add Note to Hindsight Memory</h2>
+      <h2>Add a coordinator note</h2>
       <div class="card">
-        <form id="addMemoryForm" onsubmit="handleAddHelperMemory(event, '${h.id}')">
+        <form id="addMemoryForm" onsubmit="memuiAddNote(event, 'helper', '${h.id}', 'memText')">
           <div style="display:flex; gap:8px; margin-bottom:8px;">
-            <select id="memLayer" style="flex:0 0 140px;">
-              <option value="world">World Network</option>
-              <option value="experience" selected>Experience</option>
-              <option value="opinion">Opinion</option>
-              <option value="observation">Observation</option>
-            </select>
-            <input type="text" id="memText" placeholder="e.g. Completed specialized dementia care refresher course." required style="flex:1;">
+            <input type="text" id="memText" placeholder="e.g. Completed a dementia care refresher course." required maxlength="1000" style="flex:1;">
           </div>
           <button type="submit" class="btn sm brass">Retain to Hindsight</button>
+          <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">Hindsight extracts the facts and links them to ${escapeHtml(h.name)}. The next call can use them.</div>
         </form>
       </div>
     </div>
@@ -294,14 +285,7 @@ function pageHelperDetail(id){
 }
 
 function handleAddHelperMemory(event, helperId){
-  event.preventDefault();
-  const layer = document.getElementById('memLayer').value;
-  const text = document.getElementById('memText').value.trim();
-  if(!text) return;
-
-  retain(helperId, layer, text, {source: 'manual_coordinator_entry'});
-  document.getElementById('memText').value = '';
-  renderCurrentPage();
+  return memuiAddNote(event, 'helper', helperId, 'memText');
 }
 
 function wireHelpers(){}

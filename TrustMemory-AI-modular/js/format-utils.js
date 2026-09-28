@@ -8,14 +8,6 @@ function labelFor(id){
   return id;
 }
 
-function labelForShort(id){
-  return labelFor(id).split(' ')[0];
-}
-
-function firstName(n){
-  return n.split(' ')[0];
-}
-
 function initials(n){
   return n.split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase();
 }

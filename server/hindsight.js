@@ -94,8 +94,9 @@ function mapResult(r) {
   };
 }
 
-async function recall(query, { tags, tagsMatch = 'any', budget = 'low', maxTokens = 1500, limit = 10, types, preferObservations } = {}) {
+async function recall(query, { tags, tagsMatch = 'any', budget = 'low', maxTokens = 1500, limit = 10, types, preferObservations, withSources = false } = {}) {
   const body = { query, budget, max_tokens: maxTokens };
+  if (withSources) body.include = { source_facts: {} };
   if (tags && tags.length) { body.tags = tags; body.tags_match = tagsMatch; }
   if (types && types.length) body.types = types;
   if (preferObservations) body.prefer_observations = true;
@@ -107,15 +108,23 @@ async function recall(query, { tags, tagsMatch = 'any', budget = 'low', maxToken
     if (isBankMissing(err)) return [];
     throw err;
   }
+  const sources = (data && data.source_facts) || {};
   return (data && data.results ? data.results : [])
     .filter(r => r && r.text && r.text.trim())
     .slice(0, limit)
-    .map(mapResult);
+    .map(r => {
+      const m = mapResult(r);
+      if (withSources) {
+        m.evidence = (r.source_fact_ids || []).map(id => sources[id]).filter(Boolean)
+          .map(f => ({ text: String(f.text || '').split(' | ')[0], when: f.mentioned_at || f.occurred_start || '' }));
+      }
+      return m;
+    });
 }
 
 /** Consolidated, evidence-backed beliefs Hindsight has formed (fact type "observation"). */
 async function observations(query, { tags, limit = 12 } = {}) {
-  return recall(query, { tags, types: ['observation'], budget: 'mid', maxTokens: 2500, limit });
+  return recall(query, { tags, types: ['observation'], budget: 'mid', maxTokens: 2500, limit, withSources: true });
 }
 
 /* ------------------------------------------------------------------ reflect */

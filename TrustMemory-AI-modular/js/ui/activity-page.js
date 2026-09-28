@@ -8,7 +8,7 @@ function pageActivity(){
 }
 
 function activityRows(){
-  if(!S.activity.length) return emptyState('No activity yet.', 'Trigger an event, run a reflection, or start Demo Mode.');
+  if(!S.activity.length) return emptyState('No activity yet.', 'Start a call from the Voice Agent page, add a note, or run matching.');
   return S.activity.slice(0, 150).map(a => `<div class="activity-row"><div class="t">${a.t}</div><div><span class="agent ${a.agentClass}">${a.agentLabel}</span></div><div>${escapeHtml(a.text)}</div></div>`).join('');
 }
 

@@ -1,104 +1,64 @@
-# TrustMemory AI — Live Judge Walkthrough & Demo Guide
+# TrustMemory AI: three-minute demo
 
-> **TrustMemory AI**: An institutional memory and intelligence system for home-care agencies powered by five collaborative agents: **Memory** (Hindsight Core), **Decision**, **Voice**, **Reflection**, and **Matching**.
+Everything shown here is live: Groq drives the conversation, Hindsight holds the memory, nothing is scripted or pre-recorded.
 
----
+## Before you start (not timed)
 
-## ⚡ Cold Start (Starting the System)
+1. `.env` has `GROQ_API_KEYS` and `HINDSIGHT_API_KEY`. `npm run seed:memory` has been run at least ten minutes earlier, so observations and standing profiles have consolidated.
+2. `npm start`, then open http://localhost:3000 in Chrome (coordinator console).
+3. Open Radha's phone screen in a second window: http://localhost:3000/helper.html?helper=radha. Click **Switch line on** and allow the microphone. Place the two windows side by side.
+4. On the Voice Agent page, set Helper to **Radha Kumari**, Late arrivals to **2**, Call type to **Coaching call**. Leave **Use Hindsight memory** ticked.
+5. Optional warm-up: open Helpers, then Radha Kumari, and glance at her standing profile panel, so the audience has seen the "before" version.
 
-Run the single dev command from the project root:
+What the bank already knows about Radha (seeded, dated history): her daughter Lakshmi's school moved to an 8:00 start, a neighbour drops Lakshmi at school on three days a week, and she asked not to be called before 10 in the morning.
 
-```bash
-cd /Users/munavathvijay/Desktop/TrustMemory-AI
-npm run dev
-```
+## Script
 
-- Server and static frontend will start at: **`http://localhost:3000`**
-- SQLite database initializes automatically at: **`trustmemory.db`**
-- All agents, epistemic memory networks, and telephony routes are active.
+**0:00 - 0:15  The problem**
+Say: "A home-care agency's real knowledge lives in one coordinator's head. When she's busy or leaves, the agency forgets. TrustMemory gives the agency a memory, and a voice agent that uses it."
 
----
+**0:15 - 0:40  Ring Radha, memory before the first word**
+- Click **Ring helper's phone**. Radha's screen rings; click **Accept**.
+- The agent's opening line is spoken on the phone screen and mirrored in the console. It refers to something from memory (for example the school timing or the neighbour arrangement).
+- Point at the `[mN]` chip after that sentence in the console transcript and click it: it opens the exact Hindsight fact and its date.
+- Say: "Hindsight was recalled before the agent said a word, and every sentence that uses memory cites it."
 
-## 🎙️ The 3-Minute Live Demo Sequence
+**0:40 - 1:15  Teach it something new**
+- Speak (or type) as Radha: "The neighbour is moving away at the end of the month, so from next month my husband will drop Lakshmi on his way to the bus depot."
+- The agent answers using what it already knew about the neighbour (per-turn recall; watch the new chip).
+- Give one more short reply agreeing to message the household if she is ever running more than 10 minutes late.
+- Click **End call** on the phone screen.
 
-### **Step 1: Introduction (15 seconds)**
-- Open **`http://localhost:3000`** in your browser.
-- **Presenter says:**
-  > *"Most agency automation treats helpers like numbers and forgets every interaction the moment a call ends. TrustMemory AI is different: it maintains an institutional memory across four distinct epistemic networks — World, Experience, Opinion, and Observation. Let's see what happens when we place a real outbound coaching call."*
+**1:15 - 1:45  What it learned, what it used**
+- In the console click **End call & save to memory** if the save has not started on its own.
+- Show the two panels side by side:
+  - **Learned from this call**: the husband drop-off fact, taken only from Radha's own words.
+  - **Already knew and used**: the facts the agent cited, each with its origin (agency records, learned on a call).
+- Show the Decision Agent line: "churn X -> Y", with the named reasons underneath (for example "concrete commitment made (-8)").
+- Wait for the badge **Hindsight retain: ok**.
 
----
+**1:45 - 2:05  The standing profile changes**
+- Click **Show how the standing profile changed**. If Hindsight has not rewritten it yet, click **Rewrite it now**.
+- Point at the new line about the husband dropping Lakshmi next to the old profile.
+- Say: "This is a Hindsight mental model: a standing answer about how to coach Radha, kept current as calls come in."
 
-### **Step 2: The Calling Safeguard (20 seconds)**
-- Click on **"Voice Agent"** in the sidebar.
-- Point to the **Strict Calling Safeguard** banner and the helper roster table.
-- **Presenter says (Non-negotiable safeguard narrative):**
-  > *"Notice our safeguard design: We deliberately constrain the system to ONE manually entered number. The system never auto-dials, never loops through worker lists, and test helper records are hard-blocked from dialing. The human coordinator remains the sole authority on who gets called."*
-- *(Optional demonstration)*: Click **"Test Dial"** on Helper 2 (`TEST_NUMBER_02`) to show the strict policy block alert.
+**2:05 - 2:30  Call again, the new fact is used**
+- Click **Run the follow-up call now**, then accept on the phone screen.
+- The opening line now asks about the new drop-off arrangement or the commitment she just made, with a citation chip pointing at the fact learned two minutes ago.
+- Hang up without saving (click **Cancel** in the console).
 
----
+**2:30 - 2:45  Who to call today**
+- Go to **Coordinator Dashboard**, click **Ask Hindsight who to call today**.
+- Two or three helpers appear with a reason grounded in memory and a best time. Point out that Radha's suggested time respects "not before 10": that is a Hindsight directive being obeyed.
 
-### **Step 3: Trigger the Real Outbound Call (45 seconds)**
-- In the **Outbound Call Configuration** card:
-  - **Manual Phone Number**: Enter your real mobile number (e.g. `+91 8341745014`).
-  - **Target Helper**: Anita Verma
-  - **Recent Late Arrivals**: `2`
-  - **Scenario**: `Coaching Call (Late Arrivals Check-in)`
-- Click **"📞 Place Call to Live Destination"**.
-- **What happens:**
-  1. The backend Express route `POST /api/place-call` initiates the telephony session via **Dograh** (or Bland AI fallback).
-  2. A green pulsing banner appears: **`📞 OUTBOUND CALL IN PROGRESS (TELEPHONY ACTIVE)`**.
-  3. Your physical mobile phone rings.
-- **Presenter says:**
-  > *"The Voice Agent isn't a generic chatbot. It follows a 7-step warm Indian home-care coaching protocol. It assumes good faith, uncovers logistical obstacles like transit delays, agrees on a realistic adjustment, and secures a proactive notice commitment."*
+**2:45 - 3:00  Matching with evidence**
+- Go to **Matching**, choose **Iyer Residence** and **child care**, click **Find best match**.
+- Show the household evidence (three placements ended over schedule expectations) and each candidate's reasons and recalled facts; Priya ranks low because she asked not to be placed in child care again.
+- Close: "Every call makes the next one better, and every recommendation shows its evidence."
 
----
+## If something goes wrong
 
-### **Step 4: Post-Call Webhook & Memory Retention (30 seconds)**
-- Answer the call or click **"⚡ Finish Call & Trigger Webhook (Instant)"** on the pulsing banner.
-- **What happens behind the scenes:**
-  1. Dograh dispatches the webhook to `POST /api/dograh-webhook`.
-  2. The Voice Agent strictly writes to the **Experience Network** in SQLite (`memories` table).
-  3. The **Decision Agent** detects the new experience and recalculates Anita Verma's churn risk using the honest formula:
-     $$\text{churn} = \text{clamp}(100 - (\text{trust} \times 0.6) - (\text{positive\_exp} \times 8) + (\text{late\_arrivals} \times 5), 0, 100)$$
-  4. The newly derived Opinion is written to SQLite, and an **old → new churn delta** is logged to Agent Activity.
-- **Presenter says:**
-  > *"Crucially, the Voice Agent never scores people. It only records what happened. The Decision Agent then derives updated trust and churn scores — moving Anita's churn risk with an explicit before-and-after delta."*
-
----
-
-### **Step 5: Inspecting Hindsight Core & SQLite Proof (45 seconds)**
-- Navigate to **"Hindsight Core"** in the sidebar.
-- Click on **"Experience Network"** to show the call transcript and logged commitments.
-- Click on **"Opinion Network"** to show the derived Churn assessment.
-- Click on **"Agent Activity"** to show the live ticker:
-  `DECISION AGENT — Recalculated churn risk for Anita Verma following coaching_call. 14 → 33.`
-- **The "Judge Killer" Moment (SQLite Terminal Inspection):**
-  Open terminal in front of the judges and run:
-  ```bash
-  sqlite3 trustmemory.db "SELECT network, content, created_at FROM memories WHERE helper_id='anita' ORDER BY created_at DESC LIMIT 3;"
-  ```
-  Show that this is **NOT a frontend mock**: it is a real SQLite database row written by the backend API!
-
----
-
-## 🛡️ Presentation Fallback Plan
-
-If live telephony minutes expire or carrier PSTN is congested during the demo:
-
-1. **One-Click Pipeline Execution**:
-   - On the Voice Agent page, simply click **"⚡ Trigger Demo Webhook & Memory Write"** in the Telephony banner.
-   - This executes the exact same Express route (`/api/dograh-webhook`), performs the real SQLite insert, executes the Decision Agent formula, logs the activity, and refreshes the UI within 1 second.
-2. **Reviewing Prior Logged Calls**:
-   - Scroll down to **"Call history & Logged Commitments"** on the Voice Agent page.
-   - Click on the existing recorded call for Anita Verma to expand the verified transcript, structured Experience entry, and 2-week follow-up commitment.
-
----
-
-## 🏆 Key Architecture Highlights for Judges
-
-| Component | Implementation | Epistemic Role |
-| :--- | :--- | :--- |
-| **Memory Core** | SQLite (`better-sqlite3`) | 4 isolated networks: World, Experience, Opinion, Observation |
-| **Voice Agent** | Express + Dograh API / Bland fallback | Outbound coaching calls; strictly append-only to Experience |
-| **Decision Agent** | Deterministic Formula Engine | Derives Trust & Churn Risk into Opinion Network |
-| **Calling Guard** | Whitelisted Single Destination | Never iterates, never auto-dials, zero spam risk |
+- **No ring on the phone screen**: make sure **Switch line on** was clicked and the URL has `?helper=radha`. An unanswered ring turns into "missed" after 60 seconds; ring again.
+- **Microphone not heard**: use the typed reply box on the phone screen. Chrome speech recognition needs internet.
+- **Retain shows "queued for retry"**: Hindsight was unreachable; the call is saved locally and retries automatically. `/api/health` shows `retains_waiting`.
+- **Groq rate limited**: the client rotates keys and models; wait a few seconds and continue.

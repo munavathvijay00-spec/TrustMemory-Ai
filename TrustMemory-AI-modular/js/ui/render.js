@@ -146,6 +146,7 @@ function renderCurrentPage(){
 
     case 'settings':
       c.innerHTML = pageSettings();
+      if(typeof wireSettings === 'function') wireSettings();
       break;
 
     default:

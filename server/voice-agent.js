@@ -17,6 +17,7 @@ const groq = require('./groq');
 const hindsight = require('./hindsight');
 const { recalculateChurn } = require('./decision');
 const retainQueue = require('./retain-queue');
+const commitments = require('./commitments');
 
 const SESSIONS = new Map();
 const END_TOKEN = '[END_CALL]';
@@ -63,7 +64,17 @@ function dedupeFacts(facts, existing = []) {
   return kept;
 }
 
-async function recallForHelper(helper, { useMemory = true, scenario = 'coaching_call' } = {}) {
+function factOrigin(f) {
+  const doc = String(f.documentId || '');
+  if (f.type === 'observation') return 'consolidated';
+  if (doc.startsWith('call:')) return 'learned on a call';
+  if (doc.startsWith('feedback:')) return 'coordinator feedback';
+  if (doc.startsWith('note:')) return 'coordinator note';
+  if (doc.startsWith('seed:')) return 'agency records';
+  return 'agency records';
+}
+
+async function recallForHelper(helper, { useMemory = true, scenario = 'coaching_call', household = null } = {}) {
   if (!useMemory) {
     return { source: 'disabled', bank: hindsight.BANK_ID, facts: [], mentalModel: null, error: null };
   }
@@ -83,7 +94,13 @@ async function recallForHelper(helper, { useMemory = true, scenario = 'coaching_
       hindsight.mentalModels.get('coach-' + helper.id).catch(() => null),
     ]);
     // Only this helper's memories: an untagged, bank-wide fallback could pull another helper's facts into the call.
-    const facts = dedupeFacts(factsA);
+    let facts = dedupeFacts(factsA).map(f => Object.assign(f, { origin: factOrigin(f) }));
+    if (household) {
+      try {
+        const hh = await hindsight.recall(household.name + ': what the household expects from a helper and what they have said about ' + helper.name, { tags: ['household:' + household.id], budget: 'low', limit: 3, maxTokens: 600 });
+        facts = facts.concat(dedupeFacts(hh, facts).map(f => Object.assign(f, { origin: 'household', about: household.name })));
+      } catch (e) { /* household memory is additive */ }
+    }
     const mentalModel = mm && mm.content ? { name: mm.name, content: mm.content, updatedAt: mm.updated_at || mm.last_refreshed_at || null } : null;
     return { source: 'hindsight', bank: hindsight.BANK_ID, facts, mentalModel, localFacts: local, error: null };
   } catch (err) {
@@ -108,20 +125,20 @@ function daysBetween(a, b) {
   return Math.max(0, Math.round((new Date(b) - new Date(a)) / 86400000));
 }
 
-function buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls }) {
+function buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls, ledger }) {
   // Keep the prompt lean: every turn resends it, and the free tier meters tokens per minute.
-  const trimmed = memory.facts.slice(0, 8).map((f, i) => {
+  const trimmed = memory.facts.slice(0, 11).map((f, i) => {
     const text = String(f.text).split(' | ')[0].trim(); // drop Hindsight's "| When: ... | Involving: ..." suffix
-    return { tag: f.tag || ('m' + (i + 1)), text: text.length > 220 ? text.slice(0, 217) + '...' : text, mentionedAt: f.mentionedAt };
+    return { tag: f.tag || ('m' + (i + 1)), text: text.length > 220 ? text.slice(0, 217) + '...' : text, mentionedAt: f.mentionedAt, origin: f.origin };
   });
   const memLines = memory.source === 'disabled'
     ? '- (memory is switched off for this call: you know nothing about this helper beyond the header above)'
     : trimmed.length
-      ? trimmed.map((f, i) => '[m' + (i + 1) + '] ' + f.text + (f.mentionedAt ? ' (' + String(f.mentionedAt).slice(0, 10) + ')' : '')).join('\n')
+      ? trimmed.map((f, i) => '[' + (f.tag || ('m' + (i + 1))) + '] ' + (f.origin === 'household' ? '(said by the household) ' : '') + f.text + (f.mentionedAt ? ' (' + String(f.mentionedAt).slice(0, 10) + ')' : '')).join('\n')
       : '- (nothing on record yet. This is the first conversation with this helper.)';
-  const keyFact = trimmed.find(f => /commit|arrang|agreed|plan|will take|neighbour|bus|school/i.test(f.text)) || trimmed[0];
+  const keyFact = trimmed.find(f => f.origin !== 'household' && /commit|arrang|agreed|plan|will take|neighbour|bus|school|backup|message the/i.test(f.text)) || trimmed.find(f => f.origin !== 'household') || trimmed[0];
   const keyBlock = memory.source !== 'disabled' && keyFact
-    ? '\nKEY MEMORY FOR THIS CALL: [' + (keyFact.tag || 'm1') + '] ' + keyFact.text + '\nWhen you state the reason for calling (your second turn, after she confirms it is a good time), you MUST connect it to this key memory in the same breath, for example: "...and I wanted to check how the neighbour arrangement for Lakshmi has been working [' + (keyFact.tag || 'm1') + ']".\n'
+    ? '\nKEY MEMORY FOR THIS CALL: [' + (keyFact.tag || 'm1') + '] ' + keyFact.text + '\nWhen you state the reason for calling (your second turn, after she confirms it is a good time), you MUST name this key memory specifically and ask whether it held, in the same sentence as the reason. Do not use a generic line like "we noticed a couple of late arrivals" on its own. Example: "Last time you arranged for your neighbour to take Lakshmi to school; has that been working? [' + (keyFact.tag || 'm1') + ']".\n'
     : '';
   const mentalModelBlock = memory.mentalModel && memory.mentalModel.content
     ? '\nSTANDING PROFILE (a mental model Hindsight keeps current for this helper):\n' + String(memory.mentalModel.content).slice(0, 1200) + '\n'
@@ -134,6 +151,20 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
   const sinceBlock = scenario === 'followup_call' && last
     ? '\nSINCE LAST CALL: you last spoke ' + (last.daysAgo === 0 ? 'earlier today' : last.daysAgo === 1 ? 'yesterday' : last.daysAgo + ' days ago (' + last.created_at.slice(0, 10) + ')') + '. She committed to: ' + (last.commitment || 'see note') + '. Open by referring to that conversation (say "earlier today" or the date exactly as given, never invent a date) and that commitment, then ask whether it held.\n'
     : '';
+
+  // Commitment ledger: what she promised and has not been asked about yet, and which approach works with her.
+  const openLines = ledger && ledger.open.length
+    ? ledger.open.slice(0, 3).map(c => '- "' + c.text + '" (promised ' + (daysBetween(c.made_at.replace(' ', 'T') + 'Z', Date.now()) === 0 ? 'earlier today' : c.made_at.slice(0, 10)) + ')').join('\n')
+    : '';
+  const ledgerBlock = memory.source === 'disabled' || !ledger ? '' : [
+    openLines ? '\nOPEN COMMITMENTS (from the agency\'s commitment ledger). Early in the call, ask whether the most recent one held, in her own words; do not assume either way:\n' + openLines : '',
+    ledger.works.best
+      ? '\nWHAT WORKS WITH ' + firstName(helper.name).toUpperCase() + ' (learned from outcomes, not opinion): when the agency chose to ' + ledger.works.best.description + ', she kept ' + ledger.works.best.kept + ' of ' + (ledger.works.best.kept + ledger.works.best.broken) + ' commitments. Use that approach on this call.'
+      : '',
+    ledger.works.avoid.length
+      ? '\nAVOID with her: ' + ledger.works.avoid.map(a => a.description + ' (' + a.broken + ' broken, ' + a.kept + ' kept)').join('; ') + '.'
+      : '',
+  ].filter(Boolean).join('\n');
 
   const goal = (SCENARIO_GOALS[scenario] || SCENARIO_GOALS.coaching_call).replace('{{late_count}}', String(lateCount));
   const helperUpper = helper.name.toUpperCase();
@@ -156,6 +187,7 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     'PRIOR CALLS WITH ' + firstUpper + ':',
     priorLines,
     sinceBlock,
+    ledgerBlock,
     '',
     'HOW TO USE MEMORY:',
     '- If memory shows an earlier commitment (for example an earlier bus, a routine change), bring it up naturally early in the call and ask whether it held.',
@@ -212,7 +244,8 @@ async function attributeCitations(replyText, facts) {
   const list = facts.map(f => f.tag + ': ' + String(f.text).split(' | ')[0].slice(0, 200)).join('\n');
   const prompt = 'Reply text:\n"' + replyText + '"\n\nRemembered facts:\n' + list + '\n\nWhich facts (if any) does the reply draw on? Answer with the tags only, comma-separated (e.g. m2,m5), or NONE.';
   try {
-    const out = await groq.chat([{ role: 'user', content: prompt }], { temperature: 0, maxTokens: 40, model: groq.FALLBACK_MODEL });
+    // Reasoning models spend tokens thinking first; leave room for the short answer.
+    const out = await groq.chat([{ role: 'user', content: prompt }], { temperature: 0, maxTokens: 300, model: groq.FALLBACK_MODEL });
     return [...new Set((out.match(/m\d+/g) || []).filter(t => facts.some(f => f.tag === t)))];
   } catch (e) { return []; }
 }
@@ -240,10 +273,11 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
     return { scenario: c.scenario, created_at: c.created_at, daysAgo: daysBetween(c.created_at.replace(' ', 'T') + 'Z', Date.now()), note: note || 'no summary recorded', commitment };
   });
 
-  const memory = await recallForHelper(helper, { useMemory, scenario });
+  const memory = await recallForHelper(helper, { useMemory, scenario, household });
+  const ledger = useMemory ? { open: commitments.openFor(helperId), works: commitments.whatWorks(helperId), stats: commitments.stats(helperId) } : null;
   // Number the facts the same way the prompt does, so citations resolve back to them.
-  memory.facts = memory.facts.slice(0, 8).map((f, i) => Object.assign({}, f, { tag: 'm' + (i + 1) }));
-  const system = buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls: useMemory ? priorCalls : [] });
+  memory.facts = memory.facts.slice(0, 11).map((f, i) => Object.assign({}, f, { tag: 'm' + (i + 1) }));
+  const system = buildSystemPrompt({ helper, household, scenario, lateCount, memory, priorCalls: useMemory ? priorCalls : [], ledger });
 
   const messages = [
     { role: 'system', content: system },
@@ -269,6 +303,7 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
     startedAt: new Date().toISOString(),
     lastActivity: Date.now(),
     useMemory,
+    ledger,
     messages: [messages[0], { role: 'assistant', content: rawGreeting }],
     transcript: [{ who: 'Agent', text: greeting, cited: g.cited, t: new Date().toISOString() }],
     status: 'active',
@@ -277,7 +312,7 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
   SESSIONS.set(id, session);
 
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'voice', ?, ?)").run(
-    'act_' + Date.now(),
+    'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     'VOICE AGENT — Live browser call started with ' + helper.name + ' (' + scenario + '). ' + (useMemory ? 'Recalled ' + memory.facts.length + ' memories from ' + memory.source + (memory.mentalModel ? ' plus the standing profile' : '') + '.' : 'Memory switched OFF for comparison.'),
     nowSql()
   );
@@ -317,7 +352,7 @@ async function turn(sessionId, userText) {
             fact = s.memory.facts.find(f => { const fw = wordSet(f.text); let i = 0; for (const w of hw) if (fw.has(w)) i += 1; return i / Math.min(hw.size || 1, fw.size || 1) >= 0.8; });
             if (fact) { recalledNow.push(fact); continue; }
           }
-          fact = Object.assign({}, h, { tag: 'm' + (s.memory.facts.length + 1) });
+          fact = Object.assign({}, h, { tag: 'm' + (s.memory.facts.length + 1), origin: factOrigin(h) });
           s.memory.facts.push(fact);
           known.add(key);
         }
@@ -375,6 +410,10 @@ async function turn(sessionId, userText) {
 async function extractOutcome(s) {
   const dialogue = s.transcript.map(t => t.who + ': ' + t.text).join('\n');
   const callDate = new Date().toISOString().slice(0, 10);
+  const open = (s.ledger && s.ledger.open) || [];
+  const openBlock = open.length
+    ? ['', 'OPEN COMMITMENTS she made on earlier calls (id: text):'].concat(open.map(c => c.id + ': ' + c.text)).join('\n')
+    : '';
   const prompt = [
     'You are the agency coordinator\'s assistant. Read this coaching call transcript between the agency\'s voice agent ("Agent") and helper ' + s.helper.name + ' and extract what actually happened on this call, dated ' + callDate + '. Do not invent details that are not in the transcript. If something was not discussed, use null or false.',
     '',
@@ -391,7 +430,11 @@ async function extractOutcome(s) {
     '  "call_completed": boolean (false if the helper asked to be called back later),',
     '  "coordinator_note": one or two plain sentences for the coordinator about what she said on THIS call,',
     '  "memory_facts": array of 0 to 5 short third-person facts she stated herself on this call, dated where they describe a circumstance (empty array if she said nothing new)',
+    '  "commitment_checks": array of {"id": commitment id from the list below, "status": "kept" | "broken" | "unclear", "evidence": her own words, quoted or closely paraphrased}. Only "kept" or "broken" when SHE said so on this call; otherwise "unclear". Empty array if there are no open commitments.',
+    '  "approach_used": which approach the Agent took on this call, one of ' + Object.keys(commitments.APPROACHES).map(k => '"' + k + '" (' + commitments.APPROACHES[k] + ')').join(', '),
     '}',
+    '',
+    openBlock,
     '',
     'TRANSCRIPT:',
     dialogue,
@@ -440,7 +483,24 @@ async function saveCall(s) {
     memory_used: s.useMemory !== false,
     memory_citations: s.transcript.reduce((n, t) => n + ((t.cited && t.cited.length) || 0), 0),
     helper_turns: s.transcript.filter(t => t.who !== 'Agent').length,
+    approach_used: commitments.APPROACHES[outcome.approach_used] ? outcome.approach_used : null,
+    commitment_checks: [],
   };
+
+  // Commitment ledger: resolve what she said about earlier promises, then open the new one.
+  const openNow = (s.ledger && s.ledger.open) || [];
+  for (const chk of Array.isArray(outcome.commitment_checks) ? outcome.commitment_checks : []) {
+    const c = openNow.find(x => x.id === chk.id);
+    if (!c || !['kept', 'broken'].includes(chk.status)) continue;
+    if (commitments.resolve(c.id, chk.status, { evidence: chk.evidence, callId: 'browser_' + s.id })) {
+      outcomeRecord.commitment_checks.push({ id: c.id, text: c.text, status: chk.status, evidence: chk.evidence || '', approach: c.approach, made_at: c.made_at });
+    }
+  }
+  if (outcomeRecord.specific_commitment && s.useMemory !== false) {
+    // A new promise replaces any earlier one she did not resolve on this call.
+    for (const c of openNow) if (!outcomeRecord.commitment_checks.some(x => x.id === c.id)) commitments.resolve(c.id, 'replaced', { evidence: 'Replaced by a new commitment on a later call.', callId: 'browser_' + s.id });
+    outcomeRecord.new_commitment_id = commitments.add({ helperId: s.helper.id, text: outcomeRecord.specific_commitment, approach: outcomeRecord.approach_used, callId: 'browser_' + s.id });
+  }
 
   // 1. Call record (SQLite)
   db.prepare("INSERT INTO calls (id, helper_id, call_id, scenario, status, transcript, outcome_json, created_at) VALUES (?, ?, ?, ?, 'completed', ?, ?, ?)")
@@ -466,6 +526,11 @@ async function saveCall(s) {
       outcomeRecord.notification_commitment ? fn + ' agreed to message the household directly if running more than 10 minutes late.' : null,
       'Follow-up check-in planned for ' + followUpDate + '.',
     ].concat(outcomeRecord.memory_facts).filter(Boolean).join(' ');
+    // Outcomes of earlier promises, with the approach that produced them: this is what the bank learns works.
+    const approachText = a => commitments.APPROACHES[a] ? ' The agency had chosen to ' + commitments.APPROACHES[a] + ' when she made it.' : '';
+    const outcomeText = outcomeRecord.commitment_checks.map(c =>
+      'On ' + now.slice(0, 10) + ', ' + fn + ' said she ' + (c.status === 'kept' ? 'kept' : 'did not keep') + ' her commitment from ' + c.made_at.slice(0, 10) + ' to ' + c.text.replace(/[.]$/, '') + '.' + approachText(c.approach) + (c.evidence ? ' In her words: "' + c.evidence + '".' : '')
+    ).join(' ');
     const retainItems = [
         {
           content: dialogue,
@@ -484,24 +549,41 @@ async function saveCall(s) {
           tags,
         },
       ];
-    try {
-      const res = await hindsight.retain(retainItems);
-      const count = res && res.items_count != null ? res.items_count : 2;
-      // The helper's standing profile is rewritten by Hindsight after consolidation (refresh_after_consolidation),
-      // so no extra refresh call is made here.
-      retain = { status: 'ok', detail: 'Retained ' + count + ' items in bank ' + hindsight.BANK_ID + '. Hindsight updates the standing profile after consolidation.', bank: hindsight.BANK_ID };
-    } catch (err) {
-      const jobId = retainQueue.enqueue(retainItems, { helperId: s.helper.id, callId, error: err.message });
-      retain = { status: 'queued', detail: 'Hindsight was unreachable (' + err.message.slice(0, 120) + '). Saved locally and queued for automatic retry (' + jobId + ').', bank: hindsight.BANK_ID };
+    if (outcomeText) {
+      retainItems.push({
+        content: outcomeText,
+        context: 'Commitment outcomes recorded by the agency, with the coaching approach that preceded each one.',
+        documentId: 'call:' + callId + ':commitments',
+        timestamp: new Date().toISOString(),
+        metadata: { helper_id: s.helper.id, call_id: callId, kind: 'commitment-outcome' },
+        tags: helperTags(s.helper.id).concat(['source:commitment-outcome']),
+      });
     }
+    // Retain in the background so End call returns as soon as the outcome is saved locally.
+    // The session result is updated in place when Hindsight confirms (the console polls it).
+    retain = { status: 'saving', detail: 'Retaining the transcript and summary to Hindsight…', bank: hindsight.BANK_ID };
+    const t0 = Date.now();
+    hindsight.retain(retainItems).then(res => {
+      const count = res && res.items_count != null ? res.items_count : 2;
+      const done = { status: 'ok', detail: 'Retained ' + count + ' items in bank ' + hindsight.BANK_ID + ' in ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s. Hindsight updates the standing profile after consolidation.', bank: hindsight.BANK_ID };
+      if (s.result) s.result.retain = done;
+      hindsight.mentalModels.refresh('coach-' + s.helper.id)
+        .then(() => { if (s.result) s.result.profile_refresh = 'started'; })
+        .catch(() => {});
+      db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run('act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), 'MEMORY AGENT — Retained call with ' + s.helper.name + ' to Hindsight bank ' + hindsight.BANK_ID + '.', nowSql());
+    }).catch(err => {
+      const jobId = retainQueue.enqueue(retainItems, { helperId: s.helper.id, callId, error: err.message });
+      const queued = { status: 'queued', detail: 'Hindsight was unreachable (' + String(err.message).slice(0, 120) + '). Saved locally and queued for automatic retry (' + jobId + ').', bank: hindsight.BANK_ID };
+      if (s.result) s.result.retain = queued;
+    });
   }
 
   // 4. Decision Agent re-scores from the real outcome
   const decision = recalculateChurn(s.helper.id, s.scenario, outcomeRecord.coordinator_note, s.lateCount, outcomeRecord);
 
-  const where = retain.status === 'ok' ? 'Hindsight ' + retain.bank : (retain.status === 'queued' ? 'local now, Hindsight retry queued' : 'local only');
+  const where = retain.status === 'saving' ? 'local now, Hindsight in the background' : 'local only';
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run(
-    'act_' + (Date.now() + 1),
+    'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     'MEMORY AGENT — Retained call with ' + s.helper.name + ' to Experience network (' + where + ').',
     nowSql()
   );
@@ -512,6 +594,13 @@ async function saveCall(s) {
     call_id: callId,
     memory_id: memoryId,
     outcome: outcomeRecord,
+    learned: outcomeRecord.memory_facts,
+    commitment_checks: outcomeRecord.commitment_checks,
+    new_commitment: outcomeRecord.specific_commitment,
+    approach_used: outcomeRecord.approach_used,
+    ledger_after: commitments.stats(s.helper.id),
+    used: s.memory.facts.filter(f => s.transcript.some(t => (t.cited || []).includes(f.tag))).map(f => ({ tag: f.tag, text: String(f.text).split(' | ')[0], origin: f.origin || factOrigin(f), when: f.mentionedAt || '' })),
+    profile_before: s.memory.mentalModel ? { content: s.memory.mentalModel.content, updated_at: s.memory.mentalModel.updatedAt } : null,
     retain,
     decision,
     transcript: s.transcript,
@@ -532,11 +621,17 @@ function publicView(s) {
       source: s.memory.source,
       bank: s.memory.bank,
       count: s.memory.facts.length,
-      facts: s.memory.facts.map(f => ({ tag: f.tag, text: f.text, type: f.type || '', when: f.mentionedAt || '' })),
+      facts: s.memory.facts.map(f => ({ tag: f.tag, text: f.text, type: f.type || '', when: f.mentionedAt || '', origin: f.origin || factOrigin(f), about: f.about || null })),
       mental_model: s.memory.mentalModel ? { name: s.memory.mentalModel.name, content: s.memory.mentalModel.content, updated_at: s.memory.mentalModel.updatedAt } : null,
       error: s.memory.error,
     },
     prior_calls: s.priorCalls,
+    ledger: s.ledger ? {
+      open: s.ledger.open.map(c => ({ id: c.id, text: c.text, made_at: c.made_at })),
+      stats: s.ledger.stats,
+      best: s.ledger.works.best,
+      avoid: s.ledger.works.avoid,
+    } : null,
     status: s.status,
     call_state: s.callState || null,
     call_state_at: s.callStateAt || null,
@@ -575,7 +670,7 @@ function expireRing(s) {
   if (s.callState === 'ringing' && Date.now() - new Date(s.callStateAt).getTime() > RING_TIMEOUT_MS) {
     setCallState(s, 'missed');
     db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'voice', ?, ?)").run(
-      'act_' + Date.now(), 'VOICE AGENT — ' + s.helper.name + ' did not answer.', nowSql());
+      'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), 'VOICE AGENT — ' + s.helper.name + ' did not answer.', nowSql());
   }
 }
 
@@ -599,7 +694,7 @@ function ring(sessionId) {
   }
   setCallState(s, 'ringing');
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'voice', ?, ?)").run(
-    'act_' + Date.now(), 'VOICE AGENT — Ringing ' + s.helper.name + '\'s phone screen.', nowSql());
+    'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), 'VOICE AGENT — Ringing ' + s.helper.name + '\'s phone screen.', nowSql());
   return { session_id: s.id, call_state: s.callState };
 }
 
@@ -628,7 +723,7 @@ function answer(sessionId, accept) {
   if (s.callState !== 'ringing') throw Object.assign(new Error('This call is not ringing any more.'), { status: 409 });
   setCallState(s, accept ? 'connected' : 'declined');
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'voice', ?, ?)").run(
-    'act_' + Date.now(), 'VOICE AGENT — ' + s.helper.name + (accept ? ' answered the call.' : ' declined the call.'), nowSql());
+    'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), 'VOICE AGENT — ' + s.helper.name + (accept ? ' answered the call.' : ' declined the call.'), nowSql());
   return { session_id: s.id, call_state: s.callState, greeting: s.transcript[0] ? s.transcript[0].text : '' };
 }
 
@@ -641,4 +736,4 @@ function hangup(sessionId, by) {
   return { session_id: s.id, call_state: s.callState, ended_by: s.endedBy };
 }
 
-module.exports = { startSession, turn, completeSession, getSession, cancelSession, ring, incoming, answer, hangup, _test: { dedupeFacts, mayUseMemory, knownTags, splitCitations, daysBetween } };
+module.exports = { startSession, turn, completeSession, getSession, cancelSession, ring, incoming, answer, hangup, _test: { dedupeFacts, mayUseMemory, knownTags, splitCitations, daysBetween, attributeCitations } };

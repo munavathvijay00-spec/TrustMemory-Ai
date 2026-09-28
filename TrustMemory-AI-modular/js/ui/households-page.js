@@ -170,13 +170,13 @@ function pageHouseholdDetail(id){
     </div>
   </div>
   <div class="section">
-    <h2>Hindsight memory for ${escapeHtml(h.name)}</h2>
+    <h2>Hindsight memory for ${escapeHtml(hh.name)}</h2>
     <div class="grid g2">
       <div style="display:flex; flex-direction:column; gap:12px;">
-        ${typeof renderObservationsBlock === 'function' ? renderObservationsBlock('household', h.id) : ''}
-        ${typeof renderBriefBlock === 'function' ? renderBriefBlock('household', h.id) : ''}
+        ${typeof renderObservationsBlock === 'function' ? renderObservationsBlock('household', hh.id) : ''}
+        ${typeof renderBriefBlock === 'function' ? renderBriefBlock('household', hh.id) : ''}
       </div>
-      <div>${typeof renderMentalModelBlock === 'function' ? renderMentalModelBlock('household', h.id) : ''}</div>
+      <div>${typeof renderMentalModelBlock === 'function' ? renderMentalModelBlock('household', hh.id) : ''}</div>
     </div>
   </div>
   <div class="grid g3" style="margin-bottom:24px;">
@@ -205,19 +205,14 @@ function pageHouseholdDetail(id){
       </div></div>
 
       <div class="hr"></div>
-      <h2>Add Note to Hindsight Memory</h2>
+      <h2>Add a coordinator note</h2>
       <div class="card">
-        <form id="addHhMemoryForm" onsubmit="handleAddHouseholdMemory(event, '${hh.id}')">
+        <form id="addHhMemoryForm" onsubmit="memuiAddNote(event, 'household', '${hh.id}', 'hhMemText')">
           <div style="display:flex; gap:8px; margin-bottom:8px;">
-            <select id="hhMemLayer" style="flex:0 0 140px;">
-              <option value="world" selected>World Network</option>
-              <option value="experience">Experience</option>
-              <option value="opinion">Opinion</option>
-              <option value="observation">Observation</option>
-            </select>
-            <input type="text" id="hhMemText" placeholder="e.g. Schedule updated to evening hours; added pet care requirement." required style="flex:1;">
+            <input type="text" id="hhMemText" placeholder="e.g. Schedule moved to evening hours; now needs pet care." required maxlength="1000" style="flex:1;">
           </div>
           <button type="submit" class="btn sm brass">Retain to Hindsight</button>
+          <div style="font-size:11px; color:var(--ink-soft); margin-top:6px;">Retained to the agency's memory for ${escapeHtml(hh.name)}. Matching and calls use it.</div>
         </form>
       </div>
     </div>
@@ -238,14 +233,7 @@ function pageHouseholdDetail(id){
 }
 
 function handleAddHouseholdMemory(event, householdId){
-  event.preventDefault();
-  const layer = document.getElementById('hhMemLayer').value;
-  const text = document.getElementById('hhMemText').value.trim();
-  if(!text) return;
-
-  retain(householdId, layer, text, {source: 'manual_coordinator_entry'});
-  document.getElementById('hhMemText').value = '';
-  renderCurrentPage();
+  return memuiAddNote(event, 'household', householdId, 'hhMemText');
 }
 
 function stagedBackupCard(householdId){

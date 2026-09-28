@@ -16,10 +16,11 @@ function pageDashboard(){
   return `
     <div class="pagehead">
       <div class="eyebrow">Coordinator Dashboard</div>
-  ${typeof renderLearningMetrics === 'function' ? '<div style="margin-bottom:20px;">' + renderLearningMetrics() + '</div>' : ''}
       <h1>Your agency's memory, intelligence and action layer.</h1>
       <div class="lede">Every agent writes here: escalation calls from the Voice Agent, score changes from the Decision Agent, cross-placement patterns from the Reflection Agent, and pre-staged backups from the Matching Agent.</div>
     </div>
+    ${typeof renderWhoToCall === 'function' ? renderWhoToCall() : ''}
+    ${typeof renderLearningMetrics === 'function' ? '<div style="margin-bottom:20px;">' + renderLearningMetrics() + '</div>' : ''}
     <div class="grid g4" style="margin-bottom:30px;">
       <div class="metric"><div class="label">Active helpers</div><div class="num">${activeHelpers}</div></div>
       <div class="metric"><div class="label">Active households</div><div class="num">${activeHouseholds}</div></div>
@@ -34,7 +35,7 @@ function pageDashboard(){
       <h2>AI noticed</h2>
       <div class="desc">Signals the system surfaced on its own, before a coordinator asked.</div>
       <div class="card">
-        ${alerts.length ? alerts.map(a => alertRow(a)).join('') : emptyState('Nothing to flag right now.', 'Trigger an event from a helper or household profile, or run a Demo Mode scenario, to see this in action.')}
+        ${alerts.length ? alerts.map(a => alertRow(a)).join('') : emptyState('Nothing to flag right now.', 'Alerts appear here when a household keeps losing helpers or a call needs escalating.')}
       </div>
     </div>
     ${S.stagedBackups.filter(b => b.status === 'staged').length ? `
@@ -58,7 +59,7 @@ function pageDashboard(){
     <div class="section">
       <h2>Get started</h2>
       <div class="grid g3">
-        ${quickCard('Run Demo Mode', 'See the full remember → understand → predict → act → learn loop in ~90 seconds.', 'demo')}
+        ${quickCard('Ring a helper', 'Hold a memory-backed coaching call on the helper phone screen.', 'voice')}
         ${quickCard('Open Memory Explorer', 'Browse World, Experience, Opinion and Observation memory for any helper or household.', 'memory')}
         ${quickCard('Try Matching', 'Enter a household requirement and see a memory-informed recommendation.', 'matching')}
       </div>
@@ -97,15 +98,6 @@ function buildAiNoticedAlerts(){
       });
     }
   });
-  const priya = S.helpers.find(h => h.id === 'priya');
-  if(priya){
-    alerts.push({
-      flag: 'info',
-      title: `${priya.name} performs significantly better in elder care than child care.`,
-      sub: 'Role-specific historical performance.',
-      cta: {label: 'View matching', onClick: `nav('matching')`}
-    });
-  }
   return alerts;
 }
 

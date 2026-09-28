@@ -1,5 +1,11 @@
 /* =========================================================================
-   agents/decision-agent.js — Trust/Churn/Difficulty + severity classification
+   agents/decision-agent.js — score cache for the console
+
+   The Decision Agent that owns trust and churn is server/decision.js: it
+   re-scores churn after every call with named reasons. The browser shows the
+   server's numbers (window.SERVER_SCORES / SERVER_DIFFICULTY, filled by
+   syncBackendData in main.js). The small formulas below are only a fallback
+   for the first paint before that sync, computed from the placement roster.
    ========================================================================= */
 
 function helperEvents(id){
@@ -74,7 +80,8 @@ function recalcAll(){
 
   S.households.forEach(h => {
     SCORES[h.id] = SCORES[h.id] || {};
-    SCORES[h.id].difficulty = computeDifficulty(h.id);
+    const serverDiff = window.SERVER_DIFFICULTY && window.SERVER_DIFFICULTY[h.id];
+    SCORES[h.id].difficulty = serverDiff != null ? serverDiff : computeDifficulty(h.id);
 
     SCORE_HISTORY[h.id] = SCORE_HISTORY[h.id] || [];
     const last = SCORE_HISTORY[h.id][SCORE_HISTORY[h.id].length - 1];
@@ -86,22 +93,6 @@ function recalcAll(){
       if(SCORE_HISTORY[h.id].length > 20) SCORE_HISTORY[h.id].shift();
     }
   });
-}
-
-function classifySeverity(eventType){
-  const map = {
-    late_arrival: {severity:'MEDIUM', confidence:0.81, reason:'Attendance deviation; severity depends on recurrence.'},
-    complaint: {severity:'MEDIUM', confidence:0.85, reason:'Household-reported dissatisfaction requires review.'},
-    negative_feedback: {severity:'MEDIUM', confidence:0.78, reason:'Negative sentiment recorded in feedback.'},
-    positive_feedback: {severity:'LOW', confidence:0.9, reason:'Positive sentiment, no risk signal.'},
-    placement_failure: {severity:'HIGH', confidence:0.9, reason:'Placement ended in failure.'},
-    successful_placement: {severity:'LOW', confidence:0.92, reason:'Placement concluded successfully.'},
-    household_complaint: {severity:'HIGH', confidence:0.83, reason:'Household-side dissatisfaction pattern.'},
-    coaching_completed: {severity:'LOW', confidence:0.88, reason:'Coaching resolved with commitments logged.'},
-  };
-  const r = map[eventType] || {severity:'LOW', confidence:0.6, reason:'Unclassified event type.'};
-  log('dec','DECISION AGENT', `Classified severity for "${eventType}" → ${r.severity} (confidence ${r.confidence}). ${r.reason}`);
-  return r;
 }
 
 function churnWhy(helperId, churnScore){

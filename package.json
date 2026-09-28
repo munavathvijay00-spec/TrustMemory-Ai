@@ -7,8 +7,11 @@
     "start": "node server/index.js",
     "server": "node server/index.js",
     "dev": "node server/index.js",
+    "test": "node --test test/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage test/*.test.js",
     "seed:memory": "node server/seed-memory.js",
-    "seed:memory:dry": "node server/seed-memory.js --dry-run"
+    "seed:memory:dry": "node server/seed-memory.js --dry-run",
+    "bank:reset": "node server/reset-bank.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

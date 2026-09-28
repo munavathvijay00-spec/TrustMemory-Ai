@@ -246,6 +246,7 @@ async function endLiveVoiceSession(){
     if(typeof syncBackendData === 'function') await syncBackendData();
     lvMetrics = null;
     lvSet({status:'completed'});
+    if(data.retain && data.retain.status === 'saving') lvFollowRetain(s);
     // Ask reflect whether this call suggests a standing rule (non-blocking).
     if(s.useMemory !== false && data.retain && data.retain.status === 'ok') lvSuggestRule();
   } catch(e){
@@ -364,6 +365,116 @@ function lvStartFollowUp(){
   startLiveVoiceSession();
 }
 
+/* ------------------------------------------------------------------ background retain + standing profile before/after */
+
+async function lvFollowRetain(s){
+  for(let i = 0; i < 45; i++){
+    await new Promise(r => setTimeout(r, 2000));
+    if(lvState() !== s || !s.result) return;
+    try {
+      const d = await fetch('/api/voice/session/' + encodeURIComponent(s.sessionId)).then(r => r.json());
+      const ret = d.result && d.result.retain;
+      if(ret && ret.status !== 'saving'){
+        s.result.retain = ret;
+        log('mem', 'MEMORY AGENT', ret.status === 'ok' ? `Retained the call to Hindsight bank ${ret.bank}.` : ret.detail);
+        lvRender();
+        return;
+      }
+    } catch(e){ return; }
+  }
+}
+
+function lvLines(text){
+  return String(text || '').split(/\n+|(?<=[.!?])\s+(?=[A-Z])/).map(l => l.replace(/^[#*\-\s]+/, '').trim()).filter(l => l.length > 3);
+}
+
+function lvDiffLines(before, after){
+  const norm = l => l.toLowerCase().replace(/[^a-z0-9 ]+/g, '').replace(/\s+/g, ' ').trim();
+  const b = lvLines(before), a = lvLines(after);
+  const bs = new Set(b.map(norm)), as = new Set(a.map(norm));
+  return { added: a.filter(l => !bs.has(norm(l))), removed: b.filter(l => !as.has(norm(l))) };
+}
+
+function lvCommitmentResult(s){
+  const r = s.result;
+  if(!r) return '';
+  const checks = r.commitment_checks || [];
+  const after = r.ledger_after || {};
+  const rows = checks.map(c => `<div style="font-size:12px; line-height:1.5; padding:3px 8px; margin:3px 0; border-left:3px solid ${c.status === 'kept' ? '#1C653C' : '#A6453A'}; background:${c.status === 'kept' ? '#E6F4EA' : '#F8E6E3'};">
+      <b>${c.status === 'kept' ? 'Kept' : 'Not kept'}:</b> ${escapeHtml(c.text)}${c.evidence ? ` <span style="color:#5B6572;">· "${escapeHtml(c.evidence)}"</span>` : ''}${c.approach ? ` <span style="color:#8A93A0; font-size:11px;">(made after a "${escapeHtml(LV_APPROACH[c.approach] || c.approach)}" call)</span>` : ''}
+    </div>`).join('');
+  return `<div style="background:#fff; border:1px solid #E5EADF; border-radius:5px; padding:8px 10px; margin-top:10px;">
+    <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+      <div style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:#5B6572;">Commitment ledger after this call</div>
+      ${after.kept_rate != null ? `<span class="badge ${after.kept_rate >= 50 ? 'ok' : 'warn'}">${after.kept}/${after.kept + after.broken} kept (${after.kept_rate}%)</span>` : ''}
+    </div>
+    ${rows || `<div style="font-size:12px; color:#5B6572;">No earlier promise was checked on this call.</div>`}
+    ${r.new_commitment ? `<div style="font-size:12px; margin-top:4px;"><b>New promise opened:</b> ${escapeHtml(r.new_commitment)}. The next call will ask whether it held.</div>` : ''}
+    ${r.approach_used ? `<div style="font-size:11.5px; color:#5B6572; margin-top:3px;">Approach the agent used: ${escapeHtml(LV_APPROACH[r.approach_used] || r.approach_used)}. When this promise is resolved, the ledger learns whether that approach works with her.</div>` : ''}
+  </div>`;
+}
+
+function lvProfileDiffPanel(s){
+  const r = s.result;
+  if(!r || !r.profile_before) return '';
+  const p = s.profile || {};
+  let body;
+  if(!p.status) body = `<button class="btn sm" onclick="lvLoadProfile()">Show how the standing profile changed</button>`;
+  else if(p.status === 'waiting') body = `<div style="font-size:12px; color:#5B6572;">${escapeHtml(p.note || 'Hindsight is rewriting the profile…')}</div>`;
+  else if(p.status === 'same') body = `<div style="font-size:12px; color:#5B6572;">Hindsight has not rewritten the profile yet (it does so after consolidating new facts). <button class="btn sm" onclick="lvRefreshProfile()">Rewrite it now</button></div>`;
+  else if(p.status === 'error') body = `<div style="font-size:12px; color:#A6453A;">${escapeHtml(p.error)}</div>`;
+  else {
+    const d = lvDiffLines(r.profile_before.content, p.content);
+    body = (d.added.length || d.removed.length)
+      ? `${d.added.map(l => `<div style="font-size:12px; line-height:1.5; background:#E6F4EA; border-left:3px solid #1C653C; padding:3px 8px; margin:3px 0;">+ ${escapeHtml(l)}</div>`).join('')}
+         ${d.removed.map(l => `<div style="font-size:12px; line-height:1.5; background:#F8E6E3; border-left:3px solid #A6453A; padding:3px 8px; margin:3px 0; text-decoration:line-through; color:#7A3A32;">− ${escapeHtml(l)}</div>`).join('')}
+         <div style="font-size:10.5px; color:#8A93A0; margin-top:4px;">Rewritten by Hindsight ${escapeHtml(String(p.updated_at || '').slice(0,16).replace('T',' '))}. Green lines are new, struck lines were dropped.</div>`
+      : `<div style="font-size:12px; color:#5B6572;">The profile was rewritten but says the same thing.</div>`;
+  }
+  return `<div style="background:#fff; border:1px solid #CFE0DA; border-radius:5px; padding:8px 10px; margin-top:10px;">
+    <div style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:#3F6659; margin-bottom:6px;">Standing profile: before and after this call</div>
+    ${body}
+  </div>`;
+}
+
+async function lvLoadProfile(){
+  const s = lvState(); if(!s || !s.result) return;
+  // The server asks Hindsight to rewrite the profile as soon as the call is retained; wait for it (up to ~90 s).
+  for(let i = 0; i < 18; i++){
+    s.profile = {status:'waiting', note: i === 0 ? 'Reading the current profile…' : 'Hindsight is rewriting the profile from this call…'}; lvRender();
+    try {
+      const d = await fetch('/api/memory/mental-model?helper=' + encodeURIComponent(s.helperId)).then(r => r.json());
+      if(d.content && d.content !== s.result.profile_before.content){
+        s.profile = {status:'ready', content: d.content, updated_at: d.updated_at};
+        lvRender(); return;
+      }
+    } catch(e){ s.profile = {status:'error', error: e.message}; lvRender(); return; }
+    if(lvState() !== s) return;
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  s.profile = {status:'same'};
+  lvRender();
+}
+
+async function lvRefreshProfile(){
+  const s = lvState(); if(!s || !s.result) return;
+  s.profile = {status:'waiting', note:'Asking Hindsight to rewrite the profile from everything it now knows…'}; lvRender();
+  try {
+    await fetch('/api/memory/mental-model/refresh', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({helper: s.helperId})});
+    for(let i = 0; i < 18; i++){
+      await new Promise(r => setTimeout(r, 5000));
+      const d = await fetch('/api/memory/mental-model?helper=' + encodeURIComponent(s.helperId)).then(r => r.json());
+      if(d.content && d.content !== s.result.profile_before.content){
+        s.profile = {status:'ready', content: d.content, updated_at: d.updated_at};
+        log('mem', 'MEMORY AGENT', `Hindsight rewrote the standing profile for ${s.helperName} with what this call taught it.`);
+        lvRender(); return;
+      }
+    }
+    s.profile = {status:'same'};
+  } catch(e){ s.profile = {status:'error', error: e.message}; }
+  lvRender();
+}
+
 /* ------------------------------------------------------------------ learning metrics */
 
 let lvMetrics = null;
@@ -390,6 +501,7 @@ function renderLearningMetrics(){
       <span class="badge neutral">${m.memory_calls} memory-backed calls · ${m.coordinator_feedback} coordinator reviews</span>
     </div>
     <div class="grid g3" style="margin-bottom:12px;">${tile(m.avg_memories_recalled, 'Avg memories recalled per call')}${tile(m.avg_citations, 'Avg sentences grounded in memory')}${tile(m.commitment_rate + '%', 'Calls ending in a commitment')}</div>
+    ${m.commitments && m.commitments.kept_rate != null ? `<div class="grid g3" style="margin-bottom:12px;">${tile(m.commitments.kept_rate + '%', 'Promises kept (ledger)')}${tile(m.commitments.kept + ' / ' + (m.commitments.kept + m.commitments.broken), 'Kept / resolved')}${tile(m.commitments.open, 'Open promises to check')}</div>` : ''}
     ${calls.length ? `<div style="display:flex; gap:18px; align-items:flex-end; padding:6px 0 0;">
       ${calls.map(c => `<div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
         <div style="display:flex; gap:3px; align-items:flex-end; height:48px;">${bar(c.memories_recalled, maxRec, 'var(--brass)')}${bar(c.memory_citations, maxCit, 'var(--teal)')}</div>
@@ -459,6 +571,40 @@ function lvHelperBubble(s, t){
   </div>`;
 }
 
+function lvOriginBadge(f){
+  const o = f.origin || '';
+  const map = {
+    'learned on a call': ['learned live', '#1C653C', '#D7EFE0'],
+    'coordinator feedback': ['coordinator', '#31507A', '#E1E8F2'],
+    'coordinator note': ['coordinator note', '#31507A', '#E1E8F2'],
+    'household': ['household', '#8F6A2E', '#F3E8D6'],
+    'consolidated': ['observation', '#5B4A8F', '#ECE8F5'],
+    'agency records': ['records', '#5B6572', '#E4E7DE'],
+  };
+  const m = map[o];
+  return m ? `<span style="font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:10px; color:${m[1]}; background:${m[2]}; white-space:nowrap;">${m[0]}</span>` : '';
+}
+
+const LV_APPROACH = {reassure_first:'Reassure first', listen_first:'Listen first', direct_problem_solving:'Straight to a fix', firm_reminder:'Firm reminder'};
+
+function lvLedgerPanel(s){
+  const L = s.ledger;
+  if(!L) return '';
+  const st = L.stats || {};
+  const open = L.open || [];
+  const best = L.best;
+  const rate = st.kept_rate == null ? 'no outcomes yet' : `${st.kept}/${st.kept + st.broken} kept (${st.kept_rate}%)`;
+  return `<div style="margin-top:10px; background:#fff; border:1px solid #E5EADF; border-radius:5px; padding:8px 10px;">
+    <div style="display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; margin-bottom:4px;">
+      <div style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:#5B6572;">Commitment ledger</div>
+      <span class="badge neutral">${escapeHtml(rate)}</span>
+    </div>
+    ${open.length ? `<div style="font-size:12px; line-height:1.5;"><b>Open promise to check:</b> ${escapeHtml(open[0].text)} <span style="color:#8A93A0; font-size:11px;">(${escapeHtml(String(open[0].made_at).slice(0,10))})</span></div>` : `<div style="font-size:12px; color:#5B6572;">No open promise on file.</div>`}
+    ${best ? `<div style="font-size:12px; line-height:1.5; margin-top:4px;"><b>What works with her:</b> ${escapeHtml(LV_APPROACH[best.approach] || best.approach)} <span style="color:#1C653C;">(${best.kept} of ${best.kept + best.broken} promises kept)</span>. The agent uses this approach on this call.</div>` : `<div style="font-size:11.5px; color:#8A93A0; margin-top:4px;">No evidence yet about which approach works with her.</div>`}
+    ${(L.avoid || []).length ? `<div style="font-size:11.5px; color:#A6453A; margin-top:2px;">Avoid: ${L.avoid.map(a => escapeHtml(LV_APPROACH[a.approach] || a.approach)).join(', ')}</div>` : ''}
+  </div>`;
+}
+
 function lvMemoryPanel(s){
   const mem = s.memory;
   if(!mem) return '';
@@ -477,8 +623,9 @@ function lvMemoryPanel(s){
         <span class="badge ${mem.source === 'hindsight' ? 'ok' : 'warn'}">${mem.facts.length} ${mem.facts.length === 1 ? 'memory' : 'memories'} · ${label}</span>
       </div>
       ${open ? `<div style="background:#FFF6E5; border:1px solid #E6C98F; border-radius:4px; padding:8px 10px; margin-bottom:8px; font-size:12.5px;"><b style="font-family:var(--font-mono); color:#8F6A2E;">${escapeHtml(open.tag)}</b> ${escapeHtml(String(open.text).split(' | ')[0])}${open.when ? ` <span style="color:#8A93A0; font-size:11px;">(${escapeHtml(String(open.when).slice(0,10))})</span>` : ''}<div style="font-size:11px; color:#5B6572; margin-top:4px;">This fact was retained by Hindsight from an earlier call or feedback, and recalled for this conversation.</div></div>` : ''}
-      ${mem.facts.length ? `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.55;">${mem.facts.slice(0,10).map(f => `<li><span style="font-family:var(--font-mono); font-size:10px; color:#8F6A2E; cursor:pointer;" onclick="lvOpenFact('${f.tag}')">${escapeHtml(f.tag || '')}</span> ${escapeHtml(String(f.text).split(' | ')[0])}${f.when ? ` <span style="color:#8A93A0; font-size:11px;">(${escapeHtml(String(f.when).slice(0,10))})</span>` : ''}</li>`).join('')}${mem.facts.length > 10 ? `<li style="color:#8A93A0;">and ${mem.facts.length - 10} more</li>` : ''}</ul>`
+      ${mem.facts.length ? `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.55;">${mem.facts.slice(0,12).map(f => `<li><span style="font-family:var(--font-mono); font-size:10px; color:#8F6A2E; cursor:pointer;" onclick="lvOpenFact('${f.tag}')">${escapeHtml(f.tag || '')}</span> ${escapeHtml(String(f.text).split(' | ')[0])}${f.when ? ` <span style="color:#8A93A0; font-size:11px;">(${escapeHtml(String(f.when).slice(0,10))})</span>` : ''} ${lvOriginBadge(f)}</li>`).join('')}${mem.facts.length > 12 ? `<li style="color:#8A93A0;">and ${mem.facts.length - 12} more</li>` : ''}</ul>`
         : `<div style="font-size:12.5px; color:#5B6572;">Nothing on record yet. This is the first conversation with ${escapeHtml(s.helperName)}. The next call will start with what is said now.</div>`}
+      ${lvLedgerPanel(s)}
       ${mem.mental_model && mem.mental_model.content ? `<details style="margin-top:10px;"><summary style="font-size:11.5px; font-weight:700; color:#3F6659; cursor:pointer;">Standing profile: ${escapeHtml(mem.mental_model.name || 'How to coach ' + s.helperName)} (kept current by Hindsight)</summary><div style="font-size:12px; line-height:1.55; color:var(--ink); margin-top:6px; white-space:pre-wrap;">${escapeHtml(String(mem.mental_model.content).slice(0, 1400))}</div></details>` : ''}
       ${mem.error && mem.source !== 'hindsight' ? `<div style="font-size:11px; color:#A6453A; margin-top:6px;">${escapeHtml(mem.error)}</div>` : ''}
     </div>`;
@@ -542,9 +689,21 @@ function lvResultPanel(s){
         <div><b>Memory used:</b> ${r.outcome.memory_citations || 0} cited sentence${(r.outcome.memory_citations || 0) === 1 ? '' : 's'}, ${r.outcome.memories_recalled || 0} facts recalled</div>
       </div>
       <div style="font-size:12.5px; margin-top:8px;"><b>Coordinator note:</b> ${escapeHtml(r.outcome.coordinator_note)}</div>
-      ${r.outcome.memory_facts && r.outcome.memory_facts.length ? `<div style="font-size:12px; margin-top:8px;"><b>Facts retained for next time:</b><ul style="margin:4px 0 0; padding-left:18px;">${r.outcome.memory_facts.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul></div>` : ''}
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;">
+        <div style="background:#fff; border:1px solid #CBE1D2; border-radius:5px; padding:8px 10px;">
+          <div style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:#1C653C; margin-bottom:4px;">Learned from this call</div>
+          ${(r.learned || []).length ? `<ul style="margin:0; padding-left:16px; font-size:12px; line-height:1.5;">${r.learned.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>` : `<div style="font-size:12px; color:#5B6572;">Nothing new. She confirmed what was already known.</div>`}
+          <div style="font-size:10.5px; color:#8A93A0; margin-top:4px;">Taken only from ${escapeHtml(s.helperName.split(' ')[0])}'s own words. The next call starts with these.</div>
+        </div>
+        <div style="background:#fff; border:1px solid #E6C98F; border-radius:5px; padding:8px 10px;">
+          <div style="font-size:10.5px; font-weight:700; text-transform:uppercase; color:#8F6A2E; margin-bottom:4px;">Already knew and used</div>
+          ${(r.used || []).length ? `<ul style="margin:0; padding-left:16px; font-size:12px; line-height:1.5;">${r.used.map(f => `<li><span style="font-family:var(--font-mono); font-size:10px; color:#8F6A2E;">${escapeHtml(f.tag)}</span> ${escapeHtml(f.text)} ${lvOriginBadge(f)}</li>`).join('')}</ul>` : `<div style="font-size:12px; color:#5B6572;">No remembered fact was used on this call.</div>`}
+        </div>
+      </div>
+      ${lvCommitmentResult(s)}
+      ${lvProfileDiffPanel(s)}
       <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; font-size:12px;">
-        <span class="badge ${r.retain.status === 'ok' ? 'ok' : (r.retain.status === 'queued' ? 'warn' : 'bad')}">Hindsight retain: ${r.retain.status === 'queued' ? 'queued for retry' : escapeHtml(r.retain.status)}</span>
+        <span class="badge ${r.retain.status === 'ok' ? 'ok' : (r.retain.status === 'queued' || r.retain.status === 'saving' ? 'warn' : 'bad')}">Hindsight retain: ${r.retain.status === 'queued' ? 'queued for retry' : r.retain.status === 'saving' ? 'saving in the background…' : escapeHtml(r.retain.status)}</span>
         ${r.decision ? `<span class="badge neutral">Decision Agent: churn ${r.decision.old_churn} → ${r.decision.new_churn}</span>` : ''}
       </div>
       ${r.decision && r.decision.reasons && r.decision.reasons.length ? `<div style="font-size:11.5px; color:#5B6572; margin-top:4px;">Because: ${escapeHtml(r.decision.reasons.join('; '))}</div>` : ''}

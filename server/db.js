@@ -1,11 +1,14 @@
 const Database = require('./sqlite-compat');
 const path = require('path');
 
-const dbPath = path.resolve(__dirname, '../trustmemory.db');
+// TRUSTMEMORY_DB overrides the database file: ':memory:' for tests, or a path (relative to the cwd).
+const override = String(process.env.TRUSTMEMORY_DB || '').trim();
+const dbPath = override === ':memory:' ? ':memory:' : override ? path.resolve(override) : path.resolve(__dirname, '../trustmemory.db');
 const db = new Database(dbPath);
+db.filePath = dbPath;
 
-// Enable WAL mode for performance & concurrency
-db.pragma('journal_mode = WAL');
+// Enable WAL mode for performance & concurrency (not applicable to an in-memory database)
+if (dbPath !== ':memory:') db.pragma('journal_mode = WAL');
 
 // Initialize Tables
 db.exec(`

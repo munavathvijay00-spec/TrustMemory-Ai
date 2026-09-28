@@ -2,21 +2,33 @@
    main.js — boot sequence (loaded last)
    ========================================================================= */
 
+/**
+ * Drop the browser's cached copy and reload everything from the server.
+ * Nothing on the server or in Hindsight is changed.
+ */
 function resetDemo(){
   S = clone(INITIAL);
   MEM = {};
   SCORES = {};
   SCORE_HISTORY = {};
-  clockTick = 0;
+  window.SERVER_SCORES = null;
+  window.SERVER_DIFFICULTY = null;
   recalcAll();
-  log('mem','MEMORY AGENT', 'Demo reset — all scores, events, calls and reflections restored to initial state.');
   renderCurrentPage();
+  log('mem','MEMORY AGENT', 'Reloading helpers, households, calls and memories from the server.');
+  syncBackendData();
+}
+
+/** Add a timeline event once (by id). Events come only from server records. */
+function addEventOnce(e){
+  if(!S.events.some(x => x.id === e.id)) S.events.push(e);
 }
 
 async function syncBackendData(){
   try {
-    const [hRes, cRes, aRes] = await Promise.all([
+    const [hRes, hhRes, cRes, aRes] = await Promise.all([
       fetch('/api/helpers').then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/households').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/calls').then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/activity').then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
@@ -35,6 +47,11 @@ async function syncBackendData(){
       });
     }
 
+    if(hhRes && Array.isArray(hhRes)){
+      window.SERVER_DIFFICULTY = {};
+      hhRes.forEach(dbHh => { window.SERVER_DIFFICULTY[dbHh.id] = dbHh.difficulty; });
+    }
+
     if(cRes && Array.isArray(cRes) && cRes.length > 0){
       cRes.forEach(c => {
         const existing = S.calls.find(x => x.id === c.id || (x.call_id && x.call_id === c.call_id));
@@ -43,22 +60,28 @@ async function syncBackendData(){
             id: c.id,
             call_id: c.call_id,
             type: c.scenario || 'coaching_call',
-            helperId: c.helper_id || 'anita',
+            helperId: c.helper_id,
             householdId: c.outcome?.household_id || (S.placements.find(p => p.helperId === c.helper_id)?.householdId) || null,
             destinationPhone: c.outcome?.provider === 'browser_voice' ? 'Voice agent (Groq + Hindsight)' : (c.outcome?.provider || ''),
-            lateCount: c.outcome?.late_count || 2,
-            reason: c.outcome?.reason || `${c.outcome?.late_count || 2} recent late arrivals check-in`,
+            lateCount: c.outcome?.late_count ?? null,
+            reason: c.outcome?.reason || (c.outcome?.late_count ? `${c.outcome.late_count} recent late arrivals check-in` : 'Voice call'),
             status: c.status,
             transcript: c.transcript || [],
-            summary: c.outcome?.coordinator_note || 'Outbound check-in completed.',
-            sentiment: c.outcome?.sentiment || 'cooperative',
+            summary: c.outcome?.coordinator_note || '',
+            sentiment: c.outcome?.sentiment || '',
             experienceEntry: c.outcome,
-            followUp: `Check-in on ${c.outcome?.follow_up_date || 'two weeks'}`,
+            followUp: c.outcome?.follow_up_date ? `Check-in on ${c.outcome.follow_up_date}` : '',
             createdAt: c.created_at
           });
         }
       });
       S.calls.sort((a,b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      cRes.forEach(c => {
+        if(!c.helper_id || c.status !== 'completed') return;
+        addEventOnce({id:'call_' + c.id, helperId:c.helper_id, householdId:c.outcome?.household_id || null, placementId:null,
+          type:'coaching_completed', description:c.outcome?.coordinator_note || 'Voice call completed.',
+          severity:null, date:String(c.created_at || '').slice(0,10) || todayIso(), source:'server'});
+      });
     }
 
     for(const h of S.helpers){
@@ -68,6 +91,10 @@ async function syncBackendData(){
           const mem = memOf(h.id);
           mRes.forEach(dbM => {
             const layer = dbM.network;
+            if(layer === 'experience'){
+              addEventOnce({id:'mem_' + dbM.id, helperId:h.id, householdId:dbM.household_id || null, placementId:null,
+                type:'note', description:dbM.content, severity:null, date:String(dbM.created_at || '').slice(0,10), source:'server'});
+            }
             if(mem[layer] && !mem[layer].some(x => x.text === dbM.content)){
               mem[layer].unshift({
                 id: dbM.id,
@@ -110,13 +137,8 @@ function initApp(){
   recalcAll();
   renderAuthRail();
   buildNav();
-
-  if(!CURRENT_USER || !CURRENT_USER.isLoggedIn){
-    showAuthGate();
-  } else {
-    highlightNav();
-    renderCurrentPage();
-  }
+  highlightNav();
+  renderCurrentPage();
 
   // Sync real state from SQLite database
   syncBackendData();

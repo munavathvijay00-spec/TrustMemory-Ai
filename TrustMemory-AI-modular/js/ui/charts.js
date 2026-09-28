@@ -1,5 +1,5 @@
 /* =========================================================================
-   ui/charts.js — sparkline / trend-arrow / distribution-bar
+   ui/charts.js — sparkline
    ========================================================================= */
 
 function renderSparkline(values, width, height, strokeColor){
@@ -22,23 +22,4 @@ function renderSparkline(values, width, height, strokeColor){
   return `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow:visible; vertical-align:middle;">
     <polyline fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="${pts}" />
   </svg>`;
-}
-
-function renderTrendArrow(current, previous){
-  if(previous == null || current === previous){
-    return `<span style="color:var(--ink-faint); font-size:12px;">→</span>`;
-  }
-  if(current > previous){
-    return `<span style="color:var(--rust); font-size:12px;">↑ +${current - previous}</span>`;
-  }
-  return `<span style="color:var(--teal); font-size:12px;">↓ -${previous - current}</span>`;
-}
-
-function renderDistributionBar(pct, colorClass){
-  const c = colorClass || 'ok';
-  const color = c === 'bad' ? 'var(--rust)' : c === 'warn' ? 'var(--brass)' : 'var(--teal)';
-  const clamped = clamp(pct, 0, 100);
-  return `<div style="background:var(--paper-dim); height:6px; border-radius:3px; overflow:hidden; width:100%;">
-    <div style="width:${clamped}%; height:100%; background:${color}; border-radius:3px; transition:width .3s ease;"></div>
-  </div>`;
 }

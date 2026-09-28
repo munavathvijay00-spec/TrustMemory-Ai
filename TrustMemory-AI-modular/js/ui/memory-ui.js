@@ -38,7 +38,7 @@ function renderObservationsBlock(kind, id, opts){
   } else if(!st.items.length){
     body = `<div style="font-size:12.5px; color:var(--ink-soft);">No consolidated observations yet. Hindsight forms them in the background as facts accumulate.</div>`;
   } else {
-    body = `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.6;">${st.items.map(o => `<li>${memuiClean(o.text)}${o.mentionedAt ? ` <span style="color:var(--ink-faint); font-size:11px;">(${memuiDate(o.mentionedAt)})</span>` : ''}</li>`).join('')}</ul>`;
+    body = `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.6;">${st.items.map(o => `<li>${memuiClean(o.text)}${o.evidence && o.evidence.length ? ` <details style="display:inline;"><summary style="display:inline; cursor:pointer; font-size:10.5px; color:var(--teal); font-weight:600;">based on ${o.evidence.length} fact${o.evidence.length === 1 ? '' : 's'}</summary><ul style="margin:2px 0 4px; padding-left:16px; font-size:11.5px; color:var(--ink-soft);">${o.evidence.map(e => `<li>${memuiClean(e.text)}${e.when ? ` (${memuiDate(e.when)})` : ''}</li>`).join('')}</ul></details>` : ''}</li>`).join('')}</ul>`;
   }
   return `<div class="card" style="border-left:3px solid var(--brass);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
@@ -277,5 +277,95 @@ function renderMatchResults(){
         ${evidence(r.evidence)}
       </div>`).join('')}
     </div>
+  </div>`;
+}
+
+
+/* ------------------------------------------------------------------ who should I call today? (reflect across the whole bank) */
+
+function renderWhoToCall(){
+  const st = MEMUI.cache.whoToCall;
+  let body;
+  if(!st) body = `<button class="btn sm brass" onclick="memuiWhoToCall()">🧠 Ask Hindsight who to call today</button>
+    <div style="font-size:11.5px; color:var(--ink-soft); margin-top:6px;">Reflects over every helper's memory: follow-ups due, commitments to check, recent problems, and times not to call.</div>`;
+  else if(st.status === 'loading') body = `<div style="font-size:12.5px; color:var(--ink-soft);">Hindsight is reflecting across the agency's memory…</div>`;
+  else if(st.status === 'error') body = `<div style="font-size:12.5px; color:var(--rust);">${escapeHtml(st.error)}</div> <button class="btn sm" onclick="memuiWhoToCall()">Retry</button>`;
+  else body = (st.calls.length ? st.calls.map(c => `<div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding:8px 0; border-top:1px solid var(--line);">
+        <div><div style="font-size:13px; font-weight:600;">${escapeHtml(c.helper_name)} <span style="font-weight:400; color:var(--ink-soft); font-size:11.5px;">· ${escapeHtml(c.best_time || '')}</span></div><div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">${escapeHtml(c.reason)}</div></div>
+        <button class="btn sm primary" onclick="startCall('coaching', '${c.helper_id}')">Ring</button>
+      </div>`).join('') : `<div style="font-size:12.5px;">${escapeHtml(st.text || 'Nobody needs a call today.')}</div>`)
+    + `<div style="font-size:10.5px; color:var(--ink-faint); margin-top:6px;">Sources: ${st.sources.memories} memories${st.sources.mental_models.length ? ', standing profiles' : ''}${st.sources.directives.length ? ', directives obeyed: ' + escapeHtml(st.sources.directives.join(', ')) : ''}. <a style="cursor:pointer;" onclick="memuiWhoToCall()">Ask again</a></div>`;
+  return `<div class="card" style="border-left:3px solid var(--brass); margin-bottom:20px;">
+    <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--ink-soft); margin-bottom:8px;">Who should I call today? · Hindsight reflect</div>
+    ${body}
+  </div>`;
+}
+
+async function memuiWhoToCall(){
+  MEMUI.cache.whoToCall = {status:'loading'};
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+  try {
+    const d = await memuiFetch('/api/memory/who-to-call');
+    MEMUI.cache.whoToCall = {status:'ok', calls: d.calls || [], text: d.text || '', sources: d.sources || {memories:0, mental_models:[], directives:[]}};
+    log('ref', 'REFLECTION AGENT', `Suggested ${ (d.calls || []).length } calls for today by reflecting over the agency's memory.`);
+  } catch(e){ MEMUI.cache.whoToCall = {status:'error', error: e.message}; }
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+}
+
+/* ------------------------------------------------------------------ coordinator notes, retained to Hindsight */
+
+async function memuiAddNote(ev, kind, id, inputId){
+  ev.preventDefault();
+  const input = document.getElementById(inputId);
+  const text = (input && input.value || '').trim();
+  if(!text) return;
+  input.disabled = true;
+  try {
+    const res = await fetch('/api/memory/note', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({[kind + '_id']: id, text})});
+    const d = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(d.error || 'Could not save the note.');
+    log('mem', 'MEMORY AGENT', d.retain && d.retain.status === 'ok' ? `Coordinator note about ${labelFor(id)} retained to Hindsight.` : `Note saved locally; Hindsight retain ${d.retain ? d.retain.status : 'skipped'}.`);
+    input.value = '';
+    delete MEMUI.cache[memuiKey('obs', kind, id)];
+  } catch(e){
+    log('mem', 'MEMORY AGENT', e.message);
+  }
+  input.disabled = false;
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+}
+
+
+/* ------------------------------------------------------------------ commitment ledger (helper page) */
+
+function renderCommitmentsBlock(helperId){
+  const key = memuiKey('ledger', 'helper', helperId);
+  const st = MEMUI.cache[key];
+  if(!st){ MEMUI.cache[key] = {status:'loading'}; memuiLoad(key, '/api/memory/commitments?helper=' + encodeURIComponent(helperId), d => ({status:'ok', data:d})); }
+  const cur = MEMUI.cache[key];
+  const names = {reassure_first:'Reassure first', listen_first:'Listen first', direct_problem_solving:'Straight to a fix', firm_reminder:'Firm reminder'};
+  let body;
+  if(cur.status === 'loading') body = `<div style="font-size:12.5px; color:var(--ink-soft);">Reading the ledger…</div>`;
+  else if(cur.status === 'error') body = `<div style="font-size:12.5px; color:var(--rust);">${escapeHtml(cur.error)}</div>`;
+  else {
+    const d = cur.data; const s = d.stats; const w = d.what_works || {};
+    const badge = st => st === 'kept' ? 'ok' : st === 'broken' ? 'bad' : st === 'open' ? 'warn' : 'neutral';
+    body = `<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+        <span class="badge neutral">${s.kept_rate == null ? 'No outcomes yet' : `${s.kept}/${s.kept + s.broken} promises kept (${s.kept_rate}%)`}</span>
+        <span class="badge neutral">${s.open} open</span>
+        ${w.best ? `<span class="badge ok">What works: ${escapeHtml(names[w.best.approach] || w.best.approach)} (${w.best.kept}/${w.best.kept + w.best.broken})</span>` : ''}
+        ${(w.avoid || []).map(a => `<span class="badge bad">Avoid: ${escapeHtml(names[a.approach] || a.approach)}</span>`).join('')}
+      </div>
+      ${d.commitments.length ? d.commitments.slice(0, 6).map(c => `<div style="font-size:12.5px; padding:6px 0; border-top:1px solid var(--line);">
+        <span class="badge ${badge(c.status)}">${escapeHtml(c.status)}</span> ${escapeHtml(c.text)}
+        <span style="color:var(--ink-faint); font-size:11px;">· promised ${escapeHtml(String(c.made_at).slice(0,10))}${c.resolved_at && c.status !== 'replaced' ? ', resolved ' + escapeHtml(String(c.resolved_at).slice(0,10)) : ''}${c.approach ? ' · after a "' + escapeHtml(names[c.approach] || c.approach) + '" call' : ''}</span>
+        ${c.evidence && c.status !== 'replaced' ? `<div style="font-size:11.5px; color:var(--ink-soft); margin-top:2px;">"${escapeHtml(c.evidence)}"</div>` : ''}
+      </div>`).join('') : `<div style="font-size:12.5px; color:var(--ink-soft);">No promises recorded yet. They appear here after a call ends with a concrete commitment.</div>`}`;
+  }
+  return `<div class="card" style="border-left:3px solid var(--teal);">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
+      <div style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--ink-soft);">Commitment ledger · what she promised and whether she kept it</div>
+      <span class="badge neutral">learned from call outcomes</span>
+    </div>
+    ${body}
   </div>`;
 }

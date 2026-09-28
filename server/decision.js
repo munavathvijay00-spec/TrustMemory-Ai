@@ -29,6 +29,10 @@ function recalculateChurn(helperId, scenario, outcomeSummary, lateCount = 2, out
     if (outcome.sentiment === 'defensive') { delta += 5; reasons.push('defensive on call (+5)'); }
     if (outcome.sentiment === 'distressed') { delta += 4; reasons.push('helper distressed (+4)'); }
     if (outcome.escalations_required) { delta += 10; reasons.push('escalation required (+10)'); }
+    for (const c of Array.isArray(outcome.commitment_checks) ? outcome.commitment_checks : []) {
+      if (c.status === 'kept') { delta -= 6; reasons.push('kept an earlier commitment (-6)'); }
+      if (c.status === 'broken') { delta += 6; reasons.push('earlier commitment not kept (+6)'); }
+    }
   } else {
     // Legacy path (webhook without structured outcome): keyword scan of the summary.
     const text = String(outcomeSummary || '').toLowerCase();
@@ -51,7 +55,8 @@ function recalculateChurn(helperId, scenario, outcomeSummary, lateCount = 2, out
   `).run(opinionId, helperId, null, opinionText, now);
 
   // 3. Log to Agent Activity
-  const activityId = 'act_' + Date.now();
+  // Random suffix: two re-scores in the same millisecond must not collide on the primary key.
+  const activityId = 'act_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
   const activityText = `DECISION AGENT — Recalculated churn risk for ${helper.name} following ${scenario}. ${oldChurn} → ${calculatedChurn}.`;
 
   db.prepare(`

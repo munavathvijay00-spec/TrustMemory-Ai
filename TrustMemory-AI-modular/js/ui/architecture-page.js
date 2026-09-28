@@ -1,63 +1,49 @@
 /* =========================================================================
-   ui/architecture-page.js — In-app architecture documentation
+   ui/architecture-page.js — how the running system is actually built
    ========================================================================= */
 
 function pageArchitecture(){
-  return `<div class="pagehead"><div class="eyebrow">Architecture</div><h1>How the five agents wire together</h1><div class="lede">This mirrors the system diagram. Every box below corresponds to a real function in this prototype — open Agent Activity while you use the app to watch these edges fire in order.</div></div>
+  return `<div class="pagehead"><div class="eyebrow">Architecture</div><h1>How a call uses memory</h1><div class="lede">Two browser screens talk to one Express server. The server holds the call, asks Groq for every line, and reads and writes the agency's memory in Hindsight. Open Agent Activity while you use the app to watch each step.</div></div>
   <div class="arch-wrap"><div class="arch-grid">
-    <div class="lane"><h4>Event sources</h4>
-      <div class="node">Voice check-in calls</div>
-      <div class="node">App / WhatsApp events</div>
-      <div class="arrow-note">↓ retain</div>
+    <div class="lane"><h4>Browser screens</h4>
+      <div class="node">Coordinator console (this app)</div>
+      <div class="node">Helper phone screen (helper.html)</div>
+      <div class="arrow-note">speech in and out with the browser's own speech recognition and synthesis</div>
     </div>
-    <div class="lane"><h4>Memory Agent — Hindsight Core</h4>
-      <div class="node cyl">Retain: log event</div>
-      <div class="arrow-note">↓ writes to</div>
-      <div class="node">World Network</div>
-      <div class="node">Experience Network</div>
-      <div class="node">Opinion Network</div>
-      <div class="node">Observation Network</div>
+    <div class="lane"><h4>Voice Agent — server/voice-agent.js</h4>
+      <div class="node">Ring, answer, hang up</div>
+      <div class="node">Recall before the first word</div>
+      <div class="node">Recall on every turn, lines cite memories [m1]</div>
+      <div class="node">Outcome extracted from the helper's own words</div>
     </div>
-    <div class="lane"><h4>Voice Agent — Vapi / Bland</h4>
-      <div class="node">Household check-in call</div>
-      <div class="arrow-note">↑ feeds Retain</div>
-      <div class="node">Coaching call</div>
-      <div class="node" style="border-color:var(--rust);">Escalation call to coordinator</div>
+    <div class="lane"><h4>Memory Agent — server/hindsight.js</h4>
+      <div class="node cyl">Retain the call, notes and feedback</div>
+      <div class="node">Tags: helper:&lt;id&gt;, household:&lt;id&gt;</div>
+      <div class="node">Retry queue when Hindsight is unreachable</div>
     </div>
-    <div class="lane"><h4>Decision Agent</h4>
-      <div class="node">Recall history</div>
-      <div class="node">LLM: complaint severity</div>
-      <div class="node">Trust + Churn-risk score</div>
-      <div class="arrow-note">↓ writes to Opinion Network</div>
+    <div class="lane"><h4>Decision Agent — server/decision.js</h4>
+      <div class="node">Re-scores churn after each call</div>
+      <div class="node">Every change carries named reasons</div>
     </div>
-    <div class="lane"><h4>Reflection Agent</h4>
-      <div class="node">Hindsight Reflect / LLM synthesis</div>
-      <div class="node">Cross-placement patterns</div>
-      <div class="arrow-note">↓ writes to Observation Network</div>
+    <div class="lane"><h4>Reflection — Hindsight observations and reflect</h4>
+      <div class="node">Observations consolidated from retained facts</div>
+      <div class="node">Standing profiles (mental models) per helper</div>
+      <div class="node">Brief me, who to call today</div>
     </div>
-    <div class="lane"><h4>Matching Agent</h4>
-      <div class="node">Score candidates</div>
-      <div class="arrow-note">reads Observation Network</div>
-      <div class="node">Pre-stage backup helper</div>
-    </div>
-    <div class="lane" style="grid-column:1 / -1;"><h4>App layer</h4>
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <div class="node" style="flex:1; min-width:160px;">Postgres / Supabase — master records, scores, call logs</div>
-        <div class="node cyl" style="flex:1; min-width:160px;">Coordinator Dashboard — receives escalation calls, scores, reflection patterns, staged backups</div>
-      </div>
+    <div class="lane"><h4>Matching — /api/memory/match</h4>
+      <div class="node">Recalls each candidate's history</div>
+      <div class="node">Shows the evidence next to every score</div>
     </div>
   </div></div>
   <div class="section" style="margin-top:26px;">
     <h2>Stack</h2>
     <div class="card"><div class="rowlist" style="gap:0;">
-      ${archRow('Memory core','Hindsight (Vectorize) — Retain / Recall / Reflect','The World / Experience / Opinion / Observation model is the differentiator vs. a plain database. Simulated here via the network views above.')}
-      ${archRow('Backend / orchestration','Python + FastAPI','Async, fastest path to wiring LLM + Hindsight calls — no heavyweight agent framework for 5 fixed agents.')}
-      ${archRow('LLM inference','Groq API (GPT-OSS-120B / Qwen-32B)','Fast enough for live-demo latency. Simulated here with deterministic fallbacks, per the demo-reliability requirement.')}
-      ${archRow('App database','Postgres via Supabase','Holds master records, scores and call logs — Hindsight holds the memory, Postgres holds app state.')}
-      ${archRow('Voice agent','Vapi.ai or Bland.ai','STT+LLM+TTS+telephony in one call. This prototype runs "voice simulation mode" in-browser.')}
-      ${archRow('Frontend','Next.js + Tailwind on Vercel','Fast to ship, instant shareable demo link. This prototype is a single static HTML build of the same UI.')}
-      ${archRow('Scoring logic','Deterministic formulas + targeted LLM calls','No custom ML model — trust/churn/difficulty are transparent formulas; severity and synthesis are the only LLM calls.')}
-      ${archRow('Auth','Supabase Auth','One login for the demo agency account.')}
+      ${archRow('Memory','Hindsight Cloud (Vectorize), bank trustmemory-agency','Retain, recall, reflect, observations, mental models and directives. Every fact is tagged with the helper or household it is about.')}
+      ${archRow('LLM','Groq','Writes each line of the call from the recalled memories and extracts the outcome after hang-up. Keys rotate on rate limits.')}
+      ${archRow('Server','Node.js + Express','Holds call sessions, rate-limits and validates input, and serves this console and the phone screen.')}
+      ${archRow('App database','SQLite','Helpers, households, placements, calls, activity and the retain retry queue. Uses node:sqlite when better-sqlite3 has no binary.')}
+      ${archRow('Voice','Browser speech on the helper phone screen','The helper answers on a second screen; speech recognition and synthesis run in the browser. No telephony provider.')}
+      ${archRow('Frontend','Plain JavaScript, no build step','One script per page, loaded in order by index.html.')}
     </div></div>
   </div>`;
 }

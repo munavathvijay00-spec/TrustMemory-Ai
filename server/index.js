@@ -1,81 +1,35 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
 require('dotenv').config();
 
+const path = require('path');
+const { createApp } = require('./app');
 const db = require('./db');
-const voiceRoutes = require('./voice-routes');
-const memoryRoutes = require('./memory-routes');
+const groq = require('./groq');
+const hindsight = require('./hindsight');
 const retainQueue = require('./retain-queue');
 
-const app = express();
 const PORT = process.env.PORT || 3000;
 // Listen on this machine only by default: the API has no login and reads helper memory.
 // Set HOST=0.0.0.0 only on a trusted network (for example to open the helper phone screen from another device).
 const HOST = process.env.HOST || '127.0.0.1';
 
-app.use(cors({ origin: [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`] }));
-app.use(express.json({ limit: '64kb' }));
+/** Origin only: drops any path, query or user:password that might be embedded in the URL. */
+function safeOrigin(url) {
+  try { return new URL(url).origin; } catch (e) { return '(invalid URL)'; }
+}
 
-// Serve static frontend files
-app.use(express.static(path.resolve(__dirname, '../TrustMemory-AI-modular')));
+function banner() {
+  const shownHost = HOST === '0.0.0.0' ? 'localhost' : HOST;
+  const rel = path.relative(process.cwd(), db.filePath);
+  const dbName = db.filePath === ':memory:' || !rel || rel.startsWith('..') ? db.filePath : rel;
+  const lines = [
+    `[TrustMemory AI] http://${shownHost}:${PORT}${HOST === '0.0.0.0' ? ' (listening on all interfaces)' : ''}`,
+    `  Groq       ${groq.isConfigured() ? `${groq.keyCount()} key(s), model ${groq.MODEL}, fallback ${groq.FALLBACK_MODEL}` : 'not configured (set GROQ_API_KEYS); voice calls will fail'}`,
+    `  Hindsight  ${hindsight.isConfigured() ? `bank ${hindsight.BANK_ID} at ${safeOrigin(hindsight.BASE_URL)}` : `not configured (set HINDSIGHT_API_KEY); using local SQLite memory, bank ${hindsight.BANK_ID}`}`,
+    `  Database   ${dbName}, retains waiting: ${retainQueue.pendingCount()}`,
+  ];
+  console.log(lines.join('\n'));
+}
 
-// Voice agent (browser call + helper phone screen) and Hindsight memory endpoints
-app.use(voiceRoutes);
-app.use(memoryRoutes);
-
-/* ------------------------------------------------------------------ read-only data for the dashboard */
-
-app.get('/api/helpers', (req, res) => {
-  const helpers = db.prepare('SELECT * FROM helpers').all();
-  return res.json(helpers);
-});
-
-app.get('/api/households', (req, res) => {
-  const households = db.prepare('SELECT * FROM households').all();
-  return res.json(households);
-});
-
-app.get('/api/memories/:helper_id', (req, res) => {
-  const { helper_id } = req.params;
-  const memories = db.prepare('SELECT * FROM memories WHERE helper_id = ? ORDER BY created_at DESC').all(helper_id);
-  return res.json(memories);
-});
-
-app.get('/api/calls', (req, res) => {
-  const calls = db.prepare('SELECT * FROM calls ORDER BY created_at DESC').all();
-  const parsed = calls.map(c => {
-    let transcript = [];
-    let outcome = {};
-    try {
-      transcript = JSON.parse(c.transcript || '[]');
-      outcome = JSON.parse(c.outcome_json || '{}');
-    } catch (e) { /* keep defaults */ }
-    return { ...c, transcript, outcome };
-  });
-  return res.json(parsed);
-});
-
-app.get('/api/activity', (req, res) => {
-  const logs = db.prepare('SELECT * FROM activity ORDER BY created_at DESC LIMIT 50').all();
-  return res.json(logs);
-});
-
-// Unknown API routes answer with JSON, not the HTML fallback.
-app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
-
-// Malformed JSON bodies and other unexpected errors never leak a stack trace.
-app.use((err, req, res, next) => {
-  if (err && err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Request body is not valid JSON.' });
-  if (err && err.type === 'entity.too.large') return res.status(413).json({ error: 'Request body is too large.' });
-  console.error('[TrustMemory AI] Unhandled error:', err && err.message);
-  return res.status(500).json({ error: 'Internal error.' });
-});
-
+const app = createApp({ port: PORT });
 retainQueue.start();
-
-app.listen(PORT, HOST, () => {
-  console.log(`[TrustMemory AI] Server running at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}${HOST === '0.0.0.0' ? ' (listening on all interfaces)' : ''}`);
-  console.log(`[TrustMemory AI] Serving frontend from TrustMemory-AI-modular/`);
-  console.log(`[TrustMemory AI] SQLite database initialized at trustmemory.db`);
-});
+app.listen(PORT, HOST, banner);

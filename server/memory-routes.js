@@ -18,6 +18,7 @@ const db = require('./db');
 const groq = require('./groq');
 const hindsight = require('./hindsight');
 const retainQueue = require('./retain-queue');
+const commitments = require('./commitments');
 
 const router = express.Router();
 
@@ -77,7 +78,8 @@ router.get('/api/memory/observations', async (req, res) => {
   const name = entityName(scope.kind, scope.id);
   const q = String(req.query.q || '').trim() || (name ? `${name}: patterns, reliability, commitments, preferences, what works and what does not` : 'patterns across helpers and households: reliability, commitments, placement outcomes');
   try {
-    const items = await hindsight.observations(q, { tags: scope.tags, limit: Number(req.query.limit) || 12 });
+    const items = (await hindsight.observations(q, { tags: scope.tags, limit: Number(req.query.limit) || 12 }))
+      .map(o => ({ id: o.id, text: o.text, type: o.type, mentionedAt: o.mentionedAt, evidence: o.evidence || [] }));
     res.json({ bank: hindsight.BANK_ID, count: items.length, observations: items });
   } catch (err) { fail(res, err); }
 });
@@ -89,7 +91,7 @@ router.get('/api/memory/mental-model', async (req, res) => {
   const id = (scope.kind === 'helper' ? 'coach-' : 'household-') + scope.id;
   try {
     const mm = await hindsight.mentalModels.get(id);
-    res.json({ id: mm.id, name: mm.name, content: mm.content || '', updated_at: mm.updated_at || mm.last_refreshed_at || null, source_query: mm.source_query || '' });
+    res.json({ id: mm.id, name: mm.name, content: mm.content || '', updated_at: mm.last_refreshed_at || mm.updated_at || null, source_query: mm.source_query || '' });
   } catch (err) {
     if (err.status === 404) return res.json({ id, name: null, content: '', missing: true });
     fail(res, err);
@@ -143,7 +145,7 @@ router.post('/api/memory/directives', async (req, res) => {
     if (clash) return res.status(409).json({ error: `A directive like this already exists: "${clash.name}".`, directive: clash });
     const d = await hindsight.directives.create({ name, content, priority: priority != null ? Number(priority) : 60 });
     db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run(
-      'act_' + Date.now(), `MEMORY AGENT — Coordinator approved a new bank directive: "${name}". Every future reflect and call obeys it.`, new Date().toISOString().replace('T', ' ').substring(0, 19));
+      'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), `MEMORY AGENT — Coordinator approved a new bank directive: "${name}". Every future reflect and call obeys it.`, new Date().toISOString().replace('T', ' ').substring(0, 19));
     res.json({ directive: d });
   } catch (err) { fail(res, err); }
 });
@@ -206,7 +208,7 @@ router.post('/api/memory/feedback', async (req, res) => {
   db.prepare("INSERT INTO memories (id, helper_id, household_id, network, content, created_at) VALUES (?, ?, NULL, 'experience', ?, ?)")
     .run('mem_fb_' + Date.now(), helper_id, `Coordinator feedback (${verdict}): ${note || 'confirmed'}`, nowSql);
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)")
-    .run('act_' + Date.now(), `MEMORY AGENT — Coordinator ${verdict === 'approve' ? 'approved' : verdict === 'correct' ? 'corrected' : 'rejected'} the record of ${helper.name}'s call${call_id ? ' (' + call_id + ')' : ''}. Retained as feedback so the next call reflects it.`, nowSql);
+    .run('act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), `MEMORY AGENT — Coordinator ${verdict === 'approve' ? 'approved' : verdict === 'correct' ? 'corrected' : 'rejected'} the record of ${helper.name}'s call${call_id ? ' (' + call_id + ')' : ''}. Retained as feedback so the next call reflects it.`, nowSql);
 
   let retain = { status: 'skipped' };
   if (hindsight.isConfigured()) {
@@ -223,6 +225,98 @@ router.post('/api/memory/feedback', async (req, res) => {
     } catch (err) { retain = { status: 'error', detail: err.message }; }
   }
   res.json({ ok: true, retain });
+});
+
+/* ------------------------------------------------------------------ coordinator notes (retained, not local-only) */
+
+router.post('/api/memory/note', async (req, res) => {
+  const { helper_id, household_id, text } = req.body || {};
+  const clean = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!clean || clean.length > 1000) return res.status(400).json({ error: 'Write a note of up to 1000 characters.' });
+  const kind = helper_id ? 'helper' : household_id ? 'household' : null;
+  const id = helper_id || household_id;
+  if (!kind || !/^[a-z0-9_-]{1,32}$/i.test(id)) return res.status(400).json({ error: 'Pass helper_id or household_id.' });
+  const name = entityName(kind, id);
+  if (!name || name === id && !db.prepare(kind === 'helper' ? 'SELECT 1 FROM helpers WHERE id = ?' : 'SELECT 1 FROM households WHERE id = ?').get(id)) {
+    return res.status(404).json({ error: 'Unknown ' + kind + '.' });
+  }
+  const nowIso = new Date().toISOString();
+  const nowSqlStr = nowIso.replace('T', ' ').substring(0, 19);
+  db.prepare("INSERT INTO memories (id, helper_id, household_id, network, content, created_at) VALUES (?, ?, ?, 'experience', ?, ?)")
+    .run('mem_note_' + Date.now(), kind === 'helper' ? id : null, kind === 'household' ? id : null, 'Coordinator note: ' + clean, nowSqlStr);
+  if (!hindsight.isConfigured()) return res.json({ ok: true, retain: { status: 'skipped' } });
+  try {
+    await hindsight.retain([{
+      content: clean,
+      context: 'Note written by the agency coordinator about ' + (kind === 'helper' ? 'helper ' : 'the household ') + name + ' on ' + nowIso.slice(0, 10) + '.',
+      documentId: 'note:' + kind + ':' + id + ':' + Date.now(),
+      timestamp: nowIso,
+      metadata: { [kind + '_id']: id, kind: 'coordinator-note' },
+      tags: [kind + ':' + id, 'source:coordinator-note'],
+    }]);
+    db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run('act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), 'MEMORY AGENT — Coordinator note about ' + name + ' retained to Hindsight.', nowSqlStr);
+    res.json({ ok: true, retain: { status: 'ok', bank: hindsight.BANK_ID } });
+  } catch (err) {
+    const jobId = retainQueue.enqueue([{ content: clean, context: 'Coordinator note about ' + name + '.', documentId: 'note:' + kind + ':' + id + ':' + Date.now(), timestamp: nowIso, tags: [kind + ':' + id, 'source:coordinator-note'] }], { helperId: kind === 'helper' ? id : null, callId: 'note', error: err.message });
+    res.json({ ok: true, retain: { status: 'queued', job: jobId } });
+  }
+});
+
+/* ------------------------------------------------------------------ who should the coordinator call today? (reflect across the bank) */
+
+router.get('/api/memory/who-to-call', async (req, res) => {
+  if (!needHindsight(res)) return;
+  const helpers = db.prepare('SELECT id, name FROM helpers').all();
+  const today = new Date().toISOString().slice(0, 10);
+  const schema = {
+    type: 'object',
+    properties: {
+      calls: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            helper_name: { type: 'string' },
+            reason: { type: 'string' },
+            best_time: { type: 'string' },
+          },
+          required: ['helper_name', 'reason', 'best_time'],
+        },
+      },
+    },
+    required: ['calls'],
+  };
+  const q = 'Today is ' + today + '. Which two or three helpers should the agency coordinator call today, and why? Consider follow-ups that are due, commitments that need checking, recent late arrivals, unresolved problems, and people who may be struggling. For each, give one sentence of reason grounded in what is remembered, and the best time to call, respecting any times a helper asked not to be called. Only use these helpers: ' + helpers.map(h => h.name).join(', ') + '.';
+  try {
+    const out = await hindsight.reflect(q, { budget: 'mid', responseSchema: schema });
+    const calls = ((out.structured && out.structured.calls) || []).map(c => {
+      const h = helpers.find(x => x.name.toLowerCase() === String(c.helper_name || '').toLowerCase())
+        || helpers.find(x => String(c.helper_name || '').toLowerCase().includes(x.name.split(' ')[0].toLowerCase()));
+      return { helper_id: h ? h.id : null, helper_name: h ? h.name : c.helper_name, reason: c.reason, best_time: c.best_time };
+    }).filter(c => c.helper_id);
+    res.json({
+      calls,
+      text: out.structured ? '' : out.text,
+      sources: {
+        memories: out.basedOn.memories.length,
+        mental_models: out.basedOn.mentalModels.map(m => m.name || m.id),
+        directives: out.basedOn.directives.map(d => d.name || d.content),
+      },
+    });
+  } catch (err) { fail(res, err); }
+});
+
+/* ------------------------------------------------------------------ commitment ledger */
+
+router.get('/api/memory/commitments', (req, res) => {
+  const helperId = String(req.query.helper || '').trim();
+  if (helperId && !/^[a-z0-9_-]{1,32}$/i.test(helperId)) return res.status(400).json({ error: 'Invalid helper id.', code: 'VALIDATION' });
+  res.json({
+    commitments: commitments.listFor(helperId || null),
+    stats: commitments.stats(helperId || null),
+    what_works: helperId ? commitments.whatWorks(helperId) : null,
+    approaches: commitments.APPROACHES,
+  });
 });
 
 /* ------------------------------------------------------------------ learning metrics */
@@ -268,6 +362,8 @@ router.get('/api/memory/metrics', (req, res) => {
       avg_helper_turns_to_close: avg(withMem, 'helper_turns'),
       commitment_rate: withMem.length ? Math.round(withMem.filter(c => c.commitment).length / withMem.length * 100) : 0,
       coordinator_feedback: feedback.length,
+      commitments: commitments.stats(helperId || null),
+      kept_rate_timeline: commitments.timeline(),
       approvals: feedback.filter(f => /\(approve\)/.test(f.content)).length,
       corrections: feedback.filter(f => /\((correct|reject)\)/.test(f.content)).length,
     },
@@ -319,7 +415,7 @@ router.get('/api/memory/match', async (req, res) => {
   }).sort((a, b) => b.score - a.score);
 
   db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'match', ?, ?)").run(
-    'act_' + Date.now(), `MATCHING AGENT — Ranked ${ranked.length} candidates for ${household.name} (${role}) using recalled memory (${source}). Top: ${ranked[0] ? ranked[0].helper.name : 'none'}.`, new Date().toISOString().replace('T', ' ').substring(0, 19));
+    'act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), `MATCHING AGENT — Ranked ${ranked.length} candidates for ${household.name} (${role}) using recalled memory (${source}). Top: ${ranked[0] ? ranked[0].helper.name : 'none'}.`, new Date().toISOString().replace('T', ' ').substring(0, 19));
 
   res.json({ household: { id: household.id, name: household.name, need: household.need }, role, source, household_evidence: householdFacts.map(f => ({ text: f.text, when: f.mentionedAt })), candidates: ranked });
 });

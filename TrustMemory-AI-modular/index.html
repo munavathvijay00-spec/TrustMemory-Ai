@@ -18,16 +18,13 @@
     <div id="authBox" class="auth-box"></div>
     <nav id="navlist"></nav>
     <div class="rail-foot">
-      <button id="resetBtn">Reset demo</button>
+      <button id="resetBtn" title="Reload helpers, calls and memories from the server">Reload data</button>
     </div>
   </aside>
   <div id="main">
     <div id="content"></div>
   </div>
 </div>
-
-<!-- Authentication Gate Overlay (Login / Create Account with OTP) -->
-<div id="authOverlay" class="auth-overlay"></div>
 
 <!--
   Plain global-scope scripts loaded in dependency order.
@@ -38,15 +35,12 @@
 <script src="js/format-utils.js"></script>
 <script src="js/activity-log.js"></script>
 
-<!-- the five agents -->
+<!-- browser-side agent helpers (the agents themselves run on the server) -->
 <script src="js/agents/memory-agent.js"></script>
 <script src="js/agents/decision-agent.js"></script>
 <script src="js/agents/reflection-agent.js"></script>
-<script src="js/agents/matching-agent.js"></script>
 <script src="js/agents/voice-agent.js"></script>
 
-<!-- cross-agent orchestration -->
-<script src="js/event-workflow.js"></script>
 
 <!-- UI: charts + router + one file per page -->
 <script src="js/ui/charts.js"></script>

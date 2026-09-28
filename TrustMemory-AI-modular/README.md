@@ -1,49 +1,45 @@
-# TrustMemory AI — modular build
+# TrustMemory AI — coordinator console and helper phone screen
 
-The same interactive prototype as the original single-file `trustmemory.html`,
-split into one file per module. No build step, no bundler — every file is a
-plain `<script src="...">` tag loaded in dependency order and sharing one
-global scope, so it still just opens straight in a browser (or via GitHub
-Pages) with no `npm install`.
-
-## How to run it
-
-Open `index.html` in a modern browser. Everything else is a relative path
-next to it.
+The browser side of TrustMemory AI. No build step and no bundler: every file is a
+plain `<script src="...">` tag loaded in dependency order and sharing one global
+scope. The Express server in `../server` serves this folder, so open it through
+`npm start` at http://localhost:3000, not from the file system (every page reads
+live data from `/api/...`).
 
 ## File map
 
 ```
-index.html                 shell markup, loads every script below in order
-styles.css                 all CSS (design system tokens)
+index.html                 coordinator console shell, loads every script below in order
+helper.html                helper phone screen (answers calls, browser speech in and out)
+styles.css                 design tokens and layout
 
 js/
-  state.js                 NAV config, seed data, global state (S, MEM, SCORES, SCORE_HISTORY)
-  format-utils.js          labelFor / initials / fmtDate / escapeHtml
-  activity-log.js          shared Agent Activity log + ticker
-  event-workflow.js        orchestrates one event across all 5 agents
-  demo.js                  3 scripted end-to-end demo scenarios
-  main.js                  boot sequence (loaded last)
+  state.js                 agency roster, global state (S, MEM, SCORES, SCORE_HISTORY)
+  format-utils.js          labelFor / initials / fmtDate / escapeHtml / badge classes
+  activity-log.js          Agent Activity log + ticker
+  helper-phone.js          phone screen logic (polls for a ring, answers, talks, hangs up)
+  main.js                  boot + syncBackendData() from the server (loaded last)
 
-  agents/
-    memory-agent.js        Retain / Recall against the simulated Hindsight core
-    decision-agent.js      Trust/Churn/Difficulty + severity classification
-    reflection-agent.js    cross-placement pattern detection
-    matching-agent.js      role-fit ranking + ensureBackupStaged
-    voice-agent.js         evidence-grounded calls, idempotent
+  agents/                  thin browser helpers; the agents themselves run on the server
+    memory-agent.js        retain(): local display cache only (Hindsight writes are server side)
+    decision-agent.js      shows the server's trust/churn/difficulty, roster-based fallback
+    reflection-agent.js    reflectOnHousehold(): Hindsight reflect via /api/memory/brief
+    voice-agent.js         startCall() entry point and the saved-call card
 
   ui/
-    charts.js              sparkline / trend-arrow / distribution-bar
+    charts.js              sparkline
+    memory-ui.js           Hindsight blocks: observations, standing profile, brief, directives, matching
     render.js              router: nav(), renderCurrentPage()
-    dashboard.js           Coordinator Dashboard (intel strip, risk overview, live feed)
-    helpers-page.js        Helper roster + helper detail
-    households-page.js     Household roster + household detail
-    placements-page.js     All placements
-    memory-page.js         Hindsight Core explorer
-    matching-page.js       Matching UI
-    insights-page.js       Reflection Agent output
-    voice-page.js          Voice Agent center
+    dashboard.js           coordinator dashboard, who to call today
+    helpers-page.js        helper roster + helper detail
+    households-page.js     household roster + household detail
+    placements-page.js     all placements
+    memory-page.js         Hindsight explorer
+    matching-page.js       memory-backed matching (/api/memory/match)
+    insights-page.js       Hindsight observations across the agency
+    voice-page.js          Voice Agent page
+    voice-live.js          live call console mirrored from the phone screen
     activity-page.js       Agent Activity log
-    architecture-page.js   In-app architecture documentation
-    settings-page.js       Settings page
+    architecture-page.js   in-app architecture notes
+    settings-page.js       live integration status from /api/health
 ```

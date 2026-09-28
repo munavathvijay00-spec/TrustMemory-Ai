@@ -1,0 +1,27 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22.x, 24.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      # Install scripts are skipped, so better-sqlite3 has no native binary and the
+      # server uses the built-in node:sqlite fallback (server/sqlite-compat.js).
+      - run: npm ci --ignore-scripts
+      # Groq and Hindsight are mocked; no secrets are needed or used.
+      - run: npm test
