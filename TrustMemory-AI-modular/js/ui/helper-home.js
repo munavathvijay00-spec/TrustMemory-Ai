@@ -90,7 +90,7 @@ function helperRecordHtml(){
         <button class="btn sm primary" type="submit">Send</button></form>` : ''}
     </div>`).join('');
   const corr = r && r.corrections && r.corrections.length
-    ? `<div style="margin-top:12px; font-size:12px; color:var(--ink-soft);"><b style="color:var(--ink);">Your corrections:</b> ${r.corrections.map(c => escapeHtml(c.correction) + ' (' + escapeHtml(hhDate(c.created_at)) + ')').join('; ')}</div>`
+    ? `<div style="margin-top:12px; font-size:12px; color:var(--ink-soft);"><b style="color:var(--ink);">Your corrections:</b> ${r.corrections.map(c => escapeHtml(c.correction) + ' (' + escapeHtml(hhDate(c.created_at)) + ')' + (c.status === 'retired' ? ' <span class="badge ok">old fact removed</span>' : '')).join('; ')}</div>`
     : '';
   return `<div class="section"><h2>What the agency has on record</h2>
     <div class="card">
@@ -119,11 +119,12 @@ function helperWireRecord(){
     f.onsubmit = async e => {
       e.preventDefault();
       const i = Number(f.dataset.recform);
-      const fact = helperRecord && helperRecord.facts[i] ? helperRecord.facts[i].text : '';
+      const picked = helperRecord && helperRecord.facts[i] ? helperRecord.facts[i] : {};
+      const fact = picked.text || '';
       const input = document.getElementById('recFix' + i);
       const correction = input ? input.value.trim() : '';
       try {
-        const res = await fetch('/api/me/record/correction', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({fact, correction})});
+        const res = await fetch('/api/me/record/correction', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({fact, correction, memory_id: picked.id || null})});
         const d = await res.json().catch(() => ({}));
         if(!res.ok) throw new Error(d.error || 'Could not send your correction.');
         helperRecordOpen = null;

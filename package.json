@@ -12,7 +12,8 @@
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"server/**\" --test-coverage-lines=75 test/*.test.js",
     "seed:memory": "node server/seed-memory.js",
     "seed:memory:dry": "node server/seed-memory.js --dry-run",
-    "bank:reset": "node server/reset-bank.js"
+    "bank:reset": "node server/reset-bank.js",
+    "eval:memory": "node server/eval-memory.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

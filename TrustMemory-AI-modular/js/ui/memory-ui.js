@@ -38,7 +38,7 @@ function renderObservationsBlock(kind, id, opts){
   } else if(!st.items.length){
     body = `<div style="font-size:12.5px; color:var(--ink-soft);">No consolidated observations yet. Hindsight forms them in the background as facts accumulate.</div>`;
   } else {
-    body = `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.6;">${st.items.map(o => `<li>${memuiClean(o.text)}${o.evidence && o.evidence.length ? ` <details style="display:inline;"><summary style="display:inline; cursor:pointer; font-size:10.5px; color:var(--teal); font-weight:600;">based on ${o.evidence.length} fact${o.evidence.length === 1 ? '' : 's'}</summary><ul style="margin:2px 0 4px; padding-left:16px; font-size:11.5px; color:var(--ink-soft);">${o.evidence.map(e => `<li>${memuiClean(e.text)}${e.when ? ` (${memuiDate(e.when)})` : ''}</li>`).join('')}</ul></details>` : ''}</li>`).join('')}</ul>`;
+    body = `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.6;">${st.items.map(o => `<li>${memuiClean(o.text)}${o.evidence && o.evidence.length ? ` <details style="display:inline;"><summary style="display:inline; cursor:pointer; font-size:10.5px; color:var(--teal); font-weight:600;">based on ${o.evidence.length} fact${o.evidence.length === 1 ? '' : 's'}</summary><ul style="margin:2px 0 4px; padding-left:16px; font-size:11.5px; color:var(--ink-soft);">${o.evidence.map(e => `<li>${memuiClean(e.text)}${e.when ? ` (${memuiDate(e.when)})` : ''}</li>`).join('')}</ul></details>` : ''}${o.id ? ` <button type="button" class="memui-hist" data-hist="${escapeHtml(o.id)}" style="border:0; background:none; padding:0; cursor:pointer; font-size:10.5px; color:var(--brass-dark); font-weight:600;">${MEMUI.hist[o.id] && MEMUI.hist[o.id].open ? 'hide how it formed' : 'how it formed'}</button>${memuiHistoryHtml(o.id)}` : ''}</li>`).join('')}</ul>`;
   }
   return `<div class="card" style="border-left:3px solid var(--brass);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
@@ -60,6 +60,42 @@ async function memuiLoadObservations(kind, id){
   }
   if(typeof renderCurrentPage === 'function') renderCurrentPage();
 }
+
+/* ------------------------------------------------------------------ how a belief formed (observation history) */
+
+MEMUI.hist = {};
+
+/** Each earlier version of the belief and the new facts that made Hindsight revise it, oldest first. */
+function memuiHistoryHtml(id){
+  const st = MEMUI.hist[id];
+  if(!st || !st.open) return '';
+  const box = inner => `<div style="margin:6px 0 8px; padding:8px 10px; border-left:2px solid var(--brass); background:var(--paper-dim); border-radius:4px; font-size:11.5px; line-height:1.5; color:var(--ink-soft);">${inner}</div>`;
+  if(st.status === 'loading') return box('Reading how this belief formed…');
+  if(st.status === 'error') return box(`<span style="color:var(--rust);">${escapeHtml(st.error)}</span>`);
+  const d = st.data;
+  const count = d.current.proof_count ? ` from ${d.current.proof_count} fact${d.current.proof_count === 1 ? '' : 's'}` : '';
+  if(!d.steps.length) return box(`Formed${count}${d.first_formed ? ' on ' + memuiDate(d.first_formed) : ''} and not revised since.`);
+  const steps = d.steps.map((s, i) => `<div style="margin-top:${i ? 8 : 0}px;"><b style="color:var(--ink);">${i ? 'Then' : 'At first'}${s.since ? ' (' + memuiDate(s.since) + ')' : ''}:</b> ${memuiClean(s.text)}
+      ${s.added.length ? `<div style="margin-top:2px;">Revised${s.revised_at ? ' on ' + memuiDate(s.revised_at) : ''} after ${s.added.length} new fact${s.added.length === 1 ? '' : 's'}:<ul style="margin:2px 0 0; padding-left:16px;">${s.added.map(a => `<li>${memuiClean(a)}</li>`).join('')}</ul></div>` : ''}</div>`).join('');
+  return box(`${steps}<div style="margin-top:8px;"><b style="color:var(--ink);">Now${count}:</b> ${memuiClean(d.current.text)}</div>`);
+}
+
+async function memuiToggleHistory(id){
+  const st = MEMUI.hist[id];
+  if(st && st.status !== 'error'){ st.open = !st.open; renderCurrentPage(); return; }
+  MEMUI.hist[id] = {open: true, status: 'loading'};
+  renderCurrentPage();
+  try {
+    MEMUI.hist[id] = {open: true, status: 'ok', data: await memuiFetch('/api/memory/observations/' + encodeURIComponent(id) + '/history')};
+  } catch(e){ MEMUI.hist[id] = {open: true, status: 'error', error: e.message}; }
+  renderCurrentPage();
+}
+
+// Delegated, so it works on every page that shows observations without per-page wiring.
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-hist]');
+  if(b){ e.preventDefault(); memuiToggleHistory(b.dataset.hist); }
+});
 
 /* ------------------------------------------------------------------ standing profile (mental model) */
 

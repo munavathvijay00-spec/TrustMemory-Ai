@@ -12,6 +12,7 @@
  *   GET/POST /mental-models        standing answers Hindsight keeps current
  *   POST  /mental-models/{id}/refresh
  *   GET/POST/PATCH/DELETE /directives   hard rules reflect must obey
+ *   GET/PATCH /memories/{id}, GET /memories/{id}/history   curate one fact; how an observation was revised
  */
 require('dotenv').config();
 
@@ -33,12 +34,22 @@ function bankPath() {
 async function request(path, { method = 'POST', body, timeoutMs = 45000 } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
-  const res = await fetch(`${bankPath()}${path}`, {
+  const send = () => fetch(`${bankPath()}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
+  let res;
+  try {
+    res = await send();
+  } catch (err) {
+    // "fetch failed" is a network-level drop. A connect timeout never sent the request, so any call is
+    // safe to try again; other drops only for reads.
+    const neverSent = err.cause && err.cause.code === 'UND_ERR_CONNECT_TIMEOUT';
+    if (!/fetch failed/i.test(err.message) || (method !== 'GET' && !neverSent)) throw err;
+    res = await send();
+  }
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch (e) { /* non-JSON body */ }
@@ -207,6 +218,18 @@ const mentalModels = {
   remove: (id) => request(`/mental-models/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };
 
+/* ------------------------------------------------------------------ single memories (curation) */
+
+// Only raw facts (world/experience) can be curated; observations regenerate from their sources.
+const memories = {
+  get: (id) => request(`/memories/${encodeURIComponent(id)}`, { method: 'GET' }),
+  /** Retire a fact: recall never returns it again, but it stays on record and can be restored. */
+  invalidate: (id, reason) => request(`/memories/${encodeURIComponent(id)}`, { method: 'PATCH', body: { state: 'invalidated', ...(reason ? { reason } : {}) } }),
+  restore: (id) => request(`/memories/${encodeURIComponent(id)}`, { method: 'PATCH', body: { state: 'valid' } }),
+  /** How a derived observation was revised as new source facts arrived, oldest change first. */
+  history: (id) => request(`/memories/${encodeURIComponent(id)}/history`, { method: 'GET' }).then(d => (Array.isArray(d) ? d : (d && d.items) || [])),
+};
+
 /* ------------------------------------------------------------------ directives */
 
 const directives = {
@@ -221,5 +244,5 @@ module.exports = {
   isConfigured, BANK_ID, BASE_URL,
   retain, recall, observations, reflect,
   stats, setMission, updateConfig, getConfig,
-  mentalModels, directives,
+  mentalModels, directives, memories,
 };

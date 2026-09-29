@@ -4,6 +4,7 @@
  *   GET  /api/memory/stats             bank statistics
  *   GET  /api/memory/recall            ?q=&helper=|household=   raw facts
  *   GET  /api/memory/observations      ?helper=|household=      consolidated beliefs
+ *   GET  /api/memory/observations/:id/history                   how a belief was revised as facts arrived
  *   GET  /api/memory/mental-model      ?helper=|household=      standing profile Hindsight keeps current
  *   GET  /api/memory/brief             ?helper=                 reflect: "brief me before this call"
  *   GET  /api/memory/directives        list rules
@@ -82,6 +83,34 @@ router.get('/api/memory/observations', async (req, res) => {
     const items = (await hindsight.observations(q, { tags: scope.tags, limit: Number(req.query.limit) || 12 }))
       .map(o => ({ id: o.id, text: o.text, type: o.type, mentionedAt: o.mentionedAt, evidence: o.evidence || [] }));
     res.json({ bank: hindsight.BANK_ID, count: items.length, observations: items });
+  } catch (err) { fail(res, err); }
+});
+
+/** How a belief formed: each earlier version of the observation and the new facts that revised it. */
+router.get('/api/memory/observations/:id/history', async (req, res) => {
+  if (!needHindsight(res)) return;
+  const id = String(req.params.id);
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'Not a memory id.' });
+  const clean = t => String(t || '').split(' | ')[0].trim();
+  try {
+    // Both in parallel; a history error only matters once we know it is an observation.
+    const [current, history] = await Promise.all([hindsight.memories.get(id), hindsight.memories.history(id).catch(err => err)]);
+    if ((current.fact_type || current.type) !== 'observation') return res.status(400).json({ error: 'Only observations have a history.' });
+    if (history instanceof Error) throw history;
+    const steps = history
+      .map(h => ({
+        text: clean(h.previous_text),
+        since: h.previous_mentioned_at || null,
+        revised_at: h.changed_at || null,
+        added: (h.source_facts || []).filter(f => f.is_new).map(f => clean(f.text)).filter(Boolean),
+      }))
+      .sort((a, b) => String(a.revised_at).localeCompare(String(b.revised_at)));
+    res.json({
+      id,
+      current: { text: clean(current.text), proof_count: current.proof_count || (current.source_memory_ids || []).length || null, updated_at: current.updated_at || current.consolidated_at || null },
+      first_formed: current.mentioned_at || null,
+      steps,
+    });
   } catch (err) { fail(res, err); }
 });
 

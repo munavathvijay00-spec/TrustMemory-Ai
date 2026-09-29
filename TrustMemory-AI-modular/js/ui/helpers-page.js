@@ -236,7 +236,69 @@ function pageHelperDetail(id){
     </div>
   </div>
   ${typeof careHelperPanel === 'function' ? careHelperPanel(h.id) : ''}
+  ${correctionsPanelHtml(h)}
   ${forgetPanelHtml(h)}`;
+}
+
+let helperCorrections = {};   // helperId -> {status, items, error, msg}
+
+const CORR_STATUS = {pending: ['warn', 'Waiting for you'], retired: ['ok', 'Old fact retired'], kept: ['neutral', 'Kept both'], restored: ['neutral', 'Old fact restored']};
+
+/** Coordinator only: what she said is wrong on her record. Retiring invalidates the old fact in Hindsight. */
+function correctionsPanelHtml(h){
+  if(!CURRENT_USER || CURRENT_USER.role !== 'admin') return '';
+  const st = helperCorrections[h.id];
+  if(!st){ helperCorrections[h.id] = {status: 'loading'}; loadHelperCorrections(h.id); return ''; }
+  if(st.status !== 'ok' || !st.items.length) return '';
+  const rows = st.items.map(c => {
+    const [tone, label] = CORR_STATUS[c.status] || CORR_STATUS.pending;
+    const btns = c.status === 'retired'
+      ? `<button class="btn sm" data-corr="${escapeHtml(c.id)}" data-act="restore">Restore the old fact</button>`
+      : `${c.memory_id ? `<button class="btn sm primary" data-corr="${escapeHtml(c.id)}" data-act="retire">Retire the old fact</button>` : ''}${c.status === 'pending' ? `<button class="btn sm" data-corr="${escapeHtml(c.id)}" data-act="keep">Keep both</button>` : ''}`;
+    return `<div style="padding:10px 0; border-top:1px solid var(--line);">
+      <div style="display:flex; justify-content:space-between; gap:10px; align-items:center; flex-wrap:wrap;">
+        <div style="font-size:12px; color:var(--ink-faint);">${escapeHtml(memuiDate(c.created_at))} · <span class="badge ${tone}">${label}</span></div>
+        <div style="display:flex; gap:6px;">${btns}</div>
+      </div>
+      ${c.fact ? `<div style="font-size:12.5px; margin-top:6px; color:var(--ink-soft);"><b>On record:</b> <span style="${c.status === 'retired' ? 'text-decoration:line-through;' : ''}">${escapeHtml(c.fact)}</span></div>` : ''}
+      <div style="font-size:12.5px; margin-top:2px;"><b>She says:</b> ${escapeHtml(c.correction)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="section" style="margin-top:28px;">
+    <h2>Corrections from her</h2>
+    <div class="card">
+      <div style="font-size:12.5px; color:var(--ink-soft);">Things she said are wrong on her record. Her correction is already used on calls. If you agree, retire the old fact: Hindsight stops recalling it, but keeps it on record so you can restore it.</div>
+      ${rows}
+      ${st.msg ? `<div style="font-size:12.5px; margin-top:8px; color:${st.msg.ok ? 'var(--teal)' : 'var(--rust)'};">${escapeHtml(st.msg.text)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+async function loadHelperCorrections(id){
+  try {
+    const res = await fetch('/api/record/' + encodeURIComponent(id) + '/corrections');
+    const d = await res.json().catch(() => ({}));
+    helperCorrections[id] = res.ok ? {status: 'ok', items: d.corrections || []} : {status: 'error', error: d.error};
+  } catch(e){ helperCorrections[id] = {status: 'error', error: e.message}; }
+  if(route.page === 'helperDetail') renderCurrentPage();
+}
+
+function wireCorrections(id){
+  document.querySelectorAll('[data-corr]').forEach(b => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const st = helperCorrections[id] || {};
+      try {
+        const res = await fetch('/api/record/corrections/' + encodeURIComponent(b.dataset.corr) + '/' + b.dataset.act, {method: 'POST'});
+        const d = await res.json().catch(() => ({}));
+        if(!res.ok) throw new Error(d.error || 'Could not update the correction.');
+        st.items = (st.items || []).map(c => c.id === d.id ? Object.assign(c, d) : c);
+        st.msg = {ok: true, text: {retire: 'Retired. Hindsight will not recall the old fact again.', restore: 'Restored. The old fact can be recalled again.', keep: 'Kept both on record.'}[b.dataset.act]};
+        if(typeof log === 'function' && b.dataset.act !== 'keep') log('mem', 'MEMORY AGENT', b.dataset.act === 'retire' ? 'Retired a fact a helper corrected.' : 'Restored a retired fact.');
+      } catch(err){ st.msg = {ok: false, text: err.message}; }
+      renderCurrentPage();
+    };
+  });
 }
 
 let forgetMsg = {};
@@ -286,6 +348,7 @@ function wireHelpers(){}
 
 function wireHelperDetail(id){
   if(typeof careWireHelper === 'function') careWireHelper(id);
+  wireCorrections(id);
   wireForgetPanel(id);
   const coach = document.getElementById('coachBtn');
   if(coach) coach.onclick = () => {

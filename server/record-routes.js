@@ -41,4 +41,15 @@ router.post('/api/record/:helperId/forget', async (req, res) => {
   try { res.json(await record.forget(req.params.helperId, (req.body || {}).confirm_name)); } catch (err) { fail(res, err); }
 });
 
+/** Her corrections for the coordinator to review: retire the old fact, keep both, or restore. */
+router.get('/api/record/:helperId/corrections', (req, res) => {
+  try { res.json({ corrections: record.correctionsFor(req.params.helperId, 20) }); } catch (err) { fail(res, err); }
+});
+
+router.post('/api/record/corrections/:id/:action', async (req, res) => {
+  const act = { retire: record.retire, restore: record.restore, keep: record.keep }[req.params.action];
+  if (!act) return res.status(404).json({ error: 'Unknown action.', code: 'NOT_FOUND' });
+  try { res.json(await act(req.params.id)); } catch (err) { fail(res, err); }
+});
+
 module.exports = router;

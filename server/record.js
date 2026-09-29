@@ -6,6 +6,8 @@
  *   requests and preferences, her corrections). Household feedback, coordinator notes, safety
  *   signals, scores and standing profiles are never shown to her.
  * - correct: her correction, retained in her words; recall puts it ahead of the older fact.
+ * - retire / restore: once the coordinator agrees, the fact she corrected is invalidated in
+ *   Hindsight, so recall never returns it again; it stays on record and can be restored.
  * - markExpired: "unwell", "went home", "on leave" said more than 30 days ago is marked as
  *   possibly outdated, so the agent does not state it as current.
  * - forget: on the coordinator's request, delete every memory about her (Hindsight documents tagged
@@ -24,6 +26,14 @@ db.exec(`
     created_at TEXT NOT NULL
   );
 `);
+// memory_id: the Hindsight fact she corrected. status: pending -> retired (old fact invalidated) | kept | restored.
+{
+  const cols = new Set(db.prepare('PRAGMA table_info(record_corrections)').all().map(c => c.name));
+  if (!cols.has('memory_id')) db.exec('ALTER TABLE record_corrections ADD COLUMN memory_id TEXT');
+  if (!cols.has('status')) db.exec("ALTER TABLE record_corrections ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'");
+  if (!cols.has('reviewed_at')) db.exec('ALTER TABLE record_corrections ADD COLUMN reviewed_at TEXT');
+}
+const MEMORY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const EXPIRE_DAYS = 30;
 // Circumstances that stop being true on their own: health, travel, leave, "this week".
@@ -84,7 +94,7 @@ function originOf(f) {
 }
 
 function correctionsFor(helperId, limit = 10) {
-  return db.prepare('SELECT id, fact, correction, created_at FROM record_corrections WHERE helper_id = ? ORDER BY created_at DESC LIMIT ?').all(helperId, limit);
+  return db.prepare('SELECT id, fact, correction, created_at, memory_id, status, reviewed_at FROM record_corrections WHERE helper_id = ? ORDER BY created_at DESC LIMIT ?').all(helperId, limit);
 }
 
 /** Local fallback: facts extracted from her own words on saved calls, and her own requests. */
@@ -115,7 +125,7 @@ async function recordFor(helperId) {
         { tags: ['helper:' + helper.id], budget: 'mid', limit: 25 }
       );
       const seen = new Set();
-      facts = hits.filter(isHerWords).map(f => ({ text: core(f.text), when: String(f.mentionedAt || '').slice(0, 10), origin: originOf(f) }))
+      facts = hits.filter(isHerWords).map(f => ({ id: f.id || null, text: core(f.text), when: String(f.mentionedAt || '').slice(0, 10), origin: originOf(f) }))
         .filter(f => { const k = f.text.toLowerCase(); if (!f.text || seen.has(k)) return false; seen.add(k); return true; });
       source = 'hindsight';
     } catch {
@@ -132,16 +142,17 @@ async function recordFor(helperId) {
 
 /* ------------------------------------------------------------------ correction */
 
-function correct(helperId, { fact, correction } = {}) {
+function correct(helperId, { fact, correction, memory_id: memoryId } = {}) {
   const helper = helperRow(helperId);
   if (!helper) throw new NotFoundError('Unknown helper.');
   const c = String(correction == null ? '' : correction).replace(/\s+/g, ' ').trim();
   const f = String(fact == null ? '' : fact).replace(/\s+/g, ' ').trim();
   if (c.length < 3 || c.length > 400) throw new ValidationError('Say what is right in 3 to 400 characters.');
   if (f.length > 400) throw new ValidationError('The fact you are correcting is too long.');
+  const mid = memoryId && MEMORY_ID.test(String(memoryId)) ? String(memoryId) : null;
   const id = newId('corr_');
   const created = nowSql();
-  db.prepare('INSERT INTO record_corrections (id, helper_id, fact, correction, created_at) VALUES (?, ?, ?, ?, ?)').run(id, helper.id, f || null, c, created);
+  db.prepare('INSERT INTO record_corrections (id, helper_id, fact, correction, created_at, memory_id) VALUES (?, ?, ?, ?, ?, ?)').run(id, helper.id, f || null, c, created, mid);
   activity('MEMORY AGENT — A helper corrected the agency\'s record in her own words.');
 
   if (hindsight.isConfigured()) {
@@ -155,7 +166,68 @@ function correct(helperId, { fact, correction } = {}) {
     };
     hindsight.retain([item]).catch(err => retainQueue.enqueue([item], { helperId: helper.id, callId: 'correction', error: err.message }));
   }
-  return { id, fact: f || null, correction: c, created_at: created };
+  return { id, fact: f || null, correction: c, created_at: created, memory_id: mid, status: 'pending' };
+}
+
+/* ------------------------------------------------------------------ coordinator review */
+
+function correctionRow(id) {
+  const row = db.prepare('SELECT * FROM record_corrections WHERE id = ?').get(id);
+  if (!row) throw new NotFoundError('Unknown correction.');
+  return row;
+}
+
+function setStatus(row, status) {
+  const at = nowSql();
+  db.prepare('UPDATE record_corrections SET status = ?, reviewed_at = ? WHERE id = ?').run(status, at, row.id);
+  return Object.assign({}, row, { status, reviewed_at: at });
+}
+
+/** The fact must be one of her own raw facts in Hindsight, never someone else's or a derived observation. */
+async function herFact(row) {
+  if (!row.memory_id) throw new ValidationError('This correction is not linked to a stored memory, so there is nothing to retire.');
+  if (!hindsight.isConfigured()) throw new MemoryUnavailableError('Hindsight is not configured.');
+  let m;
+  try { m = await hindsight.memories.get(row.memory_id); } catch (err) {
+    if (err.status === 404) throw new NotFoundError('That memory no longer exists.');
+    throw new MemoryUnavailableError('Could not reach the memory bank. Try again in a minute. (' + err.message + ')');
+  }
+  const type = m.fact_type || m.type;
+  if (!(m.tags || []).includes('helper:' + row.helper_id) || type === 'observation') throw new ValidationError('That memory is not one of her own facts.');
+  return m;
+}
+
+/** Coordinator agrees with her: invalidate the old fact in Hindsight. Recall never returns it again. */
+async function retire(correctionId) {
+  const row = correctionRow(correctionId);
+  if (row.status === 'retired') return row;
+  await herFact(row);
+  const helper = helperRow(row.helper_id);
+  const reason = `Corrected by ${helper ? helper.name : 'the helper'} on ${row.created_at.slice(0, 10)}: "${row.correction}"`.slice(0, 480);
+  try { await hindsight.memories.invalidate(row.memory_id, reason); } catch (err) {
+    throw new MemoryUnavailableError('Could not retire the fact, so nothing changed. (' + err.message + ')');
+  }
+  activity('MEMORY AGENT — Retired a fact a helper corrected, after the coordinator agreed. It stays on record and can be restored.');
+  return setStatus(row, 'retired');
+}
+
+/** Undo a retire: the fact is valid again and recall can return it. */
+async function restore(correctionId) {
+  const row = correctionRow(correctionId);
+  if (row.status !== 'retired') throw new ValidationError('Only a retired fact can be restored.');
+  await herFact(row);
+  try { await hindsight.memories.restore(row.memory_id); } catch (err) {
+    throw new MemoryUnavailableError('Could not restore the fact. (' + err.message + ')');
+  }
+  activity('MEMORY AGENT — Restored a fact that had been retired after a correction.');
+  return setStatus(row, 'restored');
+}
+
+/** Coordinator keeps the old fact alongside her correction (both stay in recall). */
+function keep(correctionId) {
+  const row = correctionRow(correctionId);
+  if (row.status === 'retired') throw new ValidationError('Restore the fact first.');
+  return setStatus(row, 'kept');
 }
 
 /** Her corrections as recall facts, newest first; recall puts them ahead of what they correct. */
@@ -242,4 +314,5 @@ async function forget(helperId, confirmName) {
 module.exports = {
   EXPIRE_DAYS, ValidationError, NotFoundError, MemoryUnavailableError,
   isTemporary, markExpired, isHerWords, recordFor, correct, correctionsFor, correctionFacts, forget, aboutHelper,
+  retire, restore, keep,
 };

@@ -128,3 +128,70 @@ test('record: a helper sees her own record but cannot forget anyone', async () =
     await srv.close();
   }
 });
+
+test('record: the coordinator can retire the fact she corrected, restore it, or keep both', async () => {
+  const MID = '11111111-2222-4333-8444-555555555555';
+  const OTHER = '99999999-2222-4333-8444-555555555555';
+  const calls = [];
+  const realFetch = global.fetch;
+  global.fetch = async (url, opts = {}) => {
+    const method = opts.method || 'GET';
+    calls.push({ method, url, body: opts.body ? JSON.parse(opts.body) : null });
+    if (method === 'GET' && url.endsWith('/memories/' + MID)) return new Response(JSON.stringify({ id: MID, fact_type: 'world', tags: ['helper:meena'] }), { status: 200 });
+    if (method === 'GET' && url.endsWith('/memories/' + OTHER)) return new Response(JSON.stringify({ id: OTHER, fact_type: 'world', tags: ['helper:anita'] }), { status: 200 });
+    if (method === 'PATCH') return new Response('{}', { status: 200 });
+    if (method === 'POST' && url.endsWith('/memories')) return new Response('{}', { status: 200 });
+    throw new Error('unexpected ' + method + ' ' + url);
+  };
+  try {
+    const c = record.correct('meena', { fact: 'Meena wants to leave the Nair home.', correction: 'I want to stay with the Nairs.', memory_id: MID });
+    assert.equal(c.memory_id, MID);
+    assert.equal(c.status, 'pending');
+    assert.equal(record.correct('meena', { correction: 'Something else.', memory_id: 'not-an-id' }).memory_id, null, 'junk ids are not stored');
+
+    const retired = await record.retire(c.id);
+    assert.equal(retired.status, 'retired');
+    const patch = calls.find(x => x.method === 'PATCH');
+    assert.ok(patch.url.endsWith('/memories/' + MID));
+    assert.equal(patch.body.state, 'invalidated');
+    assert.match(patch.body.reason, /I want to stay with the Nairs/);
+    await assert.rejects(Promise.resolve().then(() => record.keep(c.id)), /Restore the fact first/);
+
+    const restored = await record.restore(c.id);
+    assert.equal(restored.status, 'restored');
+    assert.equal(calls.filter(x => x.method === 'PATCH').pop().body.state, 'valid');
+
+    // Someone else's memory, or no memory at all, cannot be retired through her correction.
+    const wrong = record.correct('meena', { correction: 'That is not mine.', memory_id: OTHER });
+    await assert.rejects(record.retire(wrong.id), /not one of her own facts/);
+    const unlinked = record.correct('meena', { correction: 'No link here.' });
+    await assert.rejects(record.retire(unlinked.id), /not linked to a stored memory/);
+    assert.equal(record.keep(unlinked.id).status, 'kept');
+    assert.equal(calls.filter(x => x.method === 'PATCH').length, 2, 'only the two real curation calls reached Hindsight');
+  } finally {
+    global.fetch = realFetch;
+  }
+});
+
+test('record: only the coordinator reviews corrections', async () => {
+  auth.seedDemoAccounts({ DEMO_COORDINATOR_PASSWORD: PASS.coordinator, DEMO_HELPER_PASSWORD: PASS.helper, DEMO_HOUSEHOLD_PASSWORD: PASS.household });
+  const srv = await startServer(createApp({ port: 0, auth: true, seedDemo: false }));
+  try {
+    const login = async (email, password) => {
+      const r = await srv.request('POST', '/api/auth/login', { body: { email, password } });
+      assert.equal(r.status, 200, r.text);
+      return { headers: { Cookie: [].concat(r.headers['set-cookie'])[0].split(';')[0] } };
+    };
+    const radha = await login('radha@trustmemory.demo', PASS.helper);
+    assert.equal((await srv.request('GET', '/api/record/radha/corrections', radha)).status, 403);
+    assert.equal((await srv.request('POST', '/api/record/corrections/x/retire', radha)).status, 403);
+    const coord = await login('coordinator@trustmemory.demo', PASS.coordinator);
+    const list = await srv.request('GET', '/api/record/radha/corrections', coord);
+    assert.equal(list.status, 200, list.text);
+    assert.ok(Array.isArray(list.body.corrections));
+    assert.equal((await srv.request('POST', '/api/record/corrections/nope/retire', coord)).status, 404);
+    assert.equal((await srv.request('POST', '/api/record/corrections/nope/delete', coord)).status, 404);
+  } finally {
+    await srv.close();
+  }
+});

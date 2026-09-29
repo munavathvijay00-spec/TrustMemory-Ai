@@ -29,6 +29,10 @@ Most agents with memory use it to answer the next question better. TrustMemory u
 5. **Memory that can be seen, corrected and forgotten.** A helper sees what the agency remembers from her own words and can correct any fact; her correction is retained to Hindsight and takes priority on the next call. Temporary circumstances (unwell, travelling, on leave) older than 30 days are marked as possibly outdated, so the agent asks instead of assuming. A coordinator can have every memory about a helper deleted on request, confirmed by typing her name. (`server/record.js`)
 6. **Memory that joins two people's histories.** Before a placement, *Check friction* on the Matching page reads the helper's constraints and the household's expectations and names the likely clashes before day one, each with the dated facts on both sides and one fix to agree up front. When a placement is already struggling, *Both sides of the story* on the household page lines up what each side said, topic by topic, with neutral questions for a mediation call. Neither decides who is right. (`server/friction.js`, `server/sides.js`)
 7. **Memory that says what's new.** Before ringing a helper, the coordinator sees what changed since the last call: promises, requests, corrections, household feedback and new memories, newest first. (`server/since.js`)
+8. **Memory that retires what is wrong.** When the coordinator agrees with a helper's correction, the old fact is invalidated in Hindsight: recall never returns it again, but it stays on record and one click restores it. (`server/record.js`)
+9. **Memory that shows how it changed its mind.** Every consolidated belief has *how it formed*: the earlier versions of the belief and the new facts that made Hindsight revise each one, with dates. (`server/memory-routes.js`)
+
+Measured with `npm run eval:memory`: 13 questions whose answers only came up on earlier calls. Recall found the right fact in the top 5 for 13 of 13 (10 ranked first), with 0 results about a different helper. [Full results](docs/memory-eval.md).
 
 The same call, with and without memory (the console's *Compare without memory* button runs this live):
 
@@ -118,6 +122,8 @@ To try a call: sign in as the coordinator, open the helper's phone screen at `/h
 | Tags | `helper:<id>`, `household:<id>`, `source:*`, `scenario:*`, `verdict:*` scope every recall and reflect | throughout `server/voice-agent.js`, `server/memory-routes.js` |
 | Retain (outcomes) | Kept and broken promises with the approach that preceded them, so the bank learns what works per helper | `server/voice-agent.js` (`saveCall`), `server/commitments.js` |
 | Temporal facts | Every retained item carries a real `timestamp`; recall returns `mentioned_at`; extraction writes circumstances as dated statements | `server/seed-memory.js` (`daysAgo`), `server/voice-agent.js` (`extractOutcome`, `saveCall`) |
+| Curation | A fact the helper corrected is invalidated once the coordinator agrees, and can be restored | `server/record.js` (`retire`, `restore`), `server/hindsight.js` (`memories`) |
+| Observation history | *How it formed*: each earlier version of a belief and the facts that revised it | `/api/memory/observations/:id/history` |
 | Bank config | Mission, disposition (empathy, skepticism, literalism), PII redaction where the plan allows | `server/seed-memory.js`, `server/hindsight.js` (`setMission`, `updateConfig`) |
 
 ## Architecture
@@ -195,6 +201,8 @@ The coordinator console and the helper phone screen share one server-side sessio
 | GET | `/api/sides?household=&helper=` | Both sides of a placement's story, lined up by topic |
 | GET | `/api/since?helper=` | What changed since the helper's last call |
 | GET | `/api/me/record` · POST `/api/me/record/correction` | The helper's own record (from her words only) and her corrections |
+| GET | `/api/record/:helperId/corrections` · POST `/api/record/corrections/:id/retire`, `/restore`, `/keep` | Coordinator reviews a helper's corrections; retire invalidates the old fact in Hindsight |
+| GET | `/api/memory/observations/:id/history` | How a belief was revised as new facts arrived |
 | POST | `/api/record/:helperId/forget` | Coordinator deletes every memory about a helper; body `{confirm_name}` |
 | GET | `/api/voice/tts/status` · POST `/api/voice/tts` | Azure neural speech for the phone screen (helper: own call only) |
 | POST | `/api/voice/followup-draft` | WhatsApp follow-up draft in the call's language, for a completed call |
@@ -247,6 +255,7 @@ Errors are JSON: `{ "error": "message", "code": "CODE" }` (memory routes return 
 npm test                 # node:test, all suites
 npm run lint             # ESLint 9 (flat config in eslint.config.js), recommended rules
 npm run test:coverage    # same tests; fails if server/ line coverage drops below 75% (currently ~80%)
+npm run eval:memory      # recall accuracy and leaks between helpers, against the live bank; writes docs/memory-eval.md
 ```
 
 Every voice session carries `trace: [{ step, ms, ok, detail }]` (start: `recall`, `mental_model`, `household_recall`, `ledger`, `llm_greeting`; each turn: `turn_recall`, `llm_reply`, `attribution`; completion: `extract`, `save_local`, `decision`, `retain`), exposed on `GET /api/voice/session/:id`, with each turn's and each completion's own entries in their responses. `test/voice-lifecycle.test.js` covers the trace, restoring a persisted session after a restart, and handing pending retains to the queue on shutdown.
