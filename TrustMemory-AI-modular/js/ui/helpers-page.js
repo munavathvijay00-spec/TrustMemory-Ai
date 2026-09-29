@@ -234,7 +234,47 @@ function pageHelperDetail(id){
       </div>
     </div>
   </div>
-  ${typeof careHelperPanel === 'function' ? careHelperPanel(h.id) : ''}`;
+  ${typeof careHelperPanel === 'function' ? careHelperPanel(h.id) : ''}
+  ${forgetPanelHtml(h)}`;
+}
+
+let forgetMsg = {};
+
+/** Coordinator only: delete every memory about this helper, confirmed by typing her full name. */
+function forgetPanelHtml(h){
+  if(!CURRENT_USER || CURRENT_USER.role !== 'admin') return '';
+  const msg = forgetMsg[h.id];
+  return `<div class="section" style="margin-top:28px;">
+    <h2>Forget this helper</h2>
+    <div class="card" style="border-color:var(--rust);">
+      <div style="font-size:12.5px; color:var(--ink-soft); margin-bottom:10px;">Deletes everything the agency remembers about her: every Hindsight memory tagged to her, her standing profile, her calls, promises, requests and safety notes. Her name is removed from the roster. This cannot be undone.</div>
+      <form id="forgetForm" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" id="forgetName" placeholder="Type her full name to confirm" style="flex:1; min-width:220px;">
+        <button class="btn sm" type="submit" style="border-color:var(--rust); color:var(--rust);">Forget everything about her</button>
+      </form>
+      ${msg ? `<div style="font-size:12.5px; margin-top:8px; color:${msg.ok ? 'var(--teal)' : 'var(--rust)'};">${escapeHtml(msg.text)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function wireForgetPanel(id){
+  const form = document.getElementById('forgetForm');
+  if(!form) return;
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const name = (document.getElementById('forgetName') || {}).value || '';
+    try {
+      const res = await fetch('/api/record/' + encodeURIComponent(id) + '/forget', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({confirm_name: name})});
+      const d = await res.json().catch(() => ({}));
+      if(!res.ok) throw new Error(d.error || 'Could not forget this helper.');
+      const local = Object.values(d.local || {}).reduce((a, b) => a + b, 0);
+      forgetMsg[id] = {ok: true, text: `Forgotten: ${d.documents} memory documents, ${local} local records${d.standing_profile ? ', and her standing profile' : ''}.`};
+      const h = S.helpers.find(x => x.id === id);
+      if(h){ h.name = 'Forgotten helper'; h.location = ''; }
+      if(typeof log === 'function') log('mem', 'MEMORY AGENT', 'Forgot all memory about a helper at the coordinator\'s request.');
+    } catch(err){ forgetMsg[id] = {ok: false, text: err.message}; }
+    renderCurrentPage();
+  };
 }
 
 function handleAddHelperMemory(event, helperId){
@@ -245,6 +285,7 @@ function wireHelpers(){}
 
 function wireHelperDetail(id){
   if(typeof careWireHelper === 'function') careWireHelper(id);
+  wireForgetPanel(id);
   const coach = document.getElementById('coachBtn');
   if(coach) coach.onclick = () => {
     window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1, scenario: 'coaching_call'}, {helper: id});

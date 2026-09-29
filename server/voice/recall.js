@@ -3,6 +3,7 @@ const db = require('../db');
 const hindsight = require('../hindsight');
 const { helperTags } = require('./util');
 const { record } = require('./trace');
+const care = require('../record');
 
 /** Hindsight appends " | When: ... | Involving: ..." to recall text; compare on the sentence itself. */
 function factCore(text) {
@@ -43,6 +44,16 @@ function factOrigin(f) {
 }
 
 /**
+ * Her own corrections go first (so they win over the older fact), then everything else; facts about
+ * temporary circumstances older than 30 days are marked as possibly outdated.
+ */
+function withCorrectionsAndExpiry(helper, facts) {
+  let corrections = [];
+  try { corrections = care.correctionFacts(helper); } catch { corrections = []; }
+  return care.markExpired(corrections.concat(dedupeFacts(facts, corrections)));
+}
+
+/**
  * `trace` (optional array) receives step timings: recall, mental_model, household_recall.
  * It only observes; the recalled memory is the same with or without it.
  */
@@ -61,7 +72,7 @@ async function recallForHelper(helper, { useMemory = true, scenario = 'coaching_
 
   if (!hindsight.isConfigured()) {
     record(trace, 'recall', t0, true, local.length + ' facts (local)');
-    return { source: 'local', bank: null, facts: local, mentalModel: null, error: 'Hindsight not configured; using local SQLite memories.' };
+    return { source: 'local', bank: null, facts: withCorrectionsAndExpiry(helper, local), mentalModel: null, error: 'Hindsight not configured; using local SQLite memories.' };
   }
   try {
     let recallEntry = null;
@@ -85,12 +96,13 @@ async function recallForHelper(helper, { useMemory = true, scenario = 'coaching_
         record(trace, 'household_recall', th, true, (facts.length - before) + ' facts');
       } catch (e) { record(trace, 'household_recall', th, false, e.message); /* household memory is additive */ }
     }
+    facts = withCorrectionsAndExpiry(helper, facts);
     const mentalModel = mm && mm.content ? { name: mm.name, content: mm.content, updatedAt: mm.updated_at || mm.last_refreshed_at || null } : null;
     return { source: 'hindsight', bank: hindsight.BANK_ID, facts, mentalModel, localFacts: local, error: null };
   } catch (err) {
     record(trace, 'recall', t0, false, err.message + ' (fell back to ' + local.length + ' local facts)');
-    return { source: 'local', bank: hindsight.BANK_ID, facts: local, mentalModel: null, error: err.message };
+    return { source: 'local', bank: hindsight.BANK_ID, facts: withCorrectionsAndExpiry(helper, local), mentalModel: null, error: err.message };
   }
 }
 
-module.exports = { factCore, wordSet, dedupeFacts, factOrigin, recallForHelper };
+module.exports = { factCore, wordSet, dedupeFacts, factOrigin, recallForHelper, withCorrectionsAndExpiry };

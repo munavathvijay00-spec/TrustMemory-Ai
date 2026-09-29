@@ -1,6 +1,8 @@
 /** HTTP routes for the browser voice agent + memory status. */
 const express = require('express');
 const agent = require('./voice-agent');
+const tts = require('./voice/tts');
+const followup = require('./voice/followup');
 
 const router = express.Router();
 
@@ -68,6 +70,25 @@ router.post('/api/voice/answer', (req, res) => {
 router.post('/api/voice/hangup', (req, res) => {
   const { session_id, by } = req.body || {};
   try { res.json(agent.hangup(session_id, by)); } catch (err) { fail(res, err); }
+});
+
+/* ------------------------------------------------------------------ Azure neural voices for the phone screen */
+
+router.get('/api/voice/tts/status', (req, res) => res.json(tts.status()));
+
+router.post('/api/voice/tts', async (req, res) => {
+  const { text, lang } = req.body || {};
+  try {
+    const audio = await tts.synthesize(text, lang);
+    res.set('Content-Type', 'audio/mpeg').set('Cache-Control', 'no-store').send(audio);
+  } catch (err) { fail(res, err); }
+});
+
+/* ------------------------------------------------------------------ WhatsApp follow-up draft (coordinator) */
+
+router.post('/api/voice/followup-draft', async (req, res) => {
+  const id = String((req.body || {}).session_id || '');
+  try { res.json(await followup.draftFollowup(id ? agent.getSession(id) : null)); } catch (err) { fail(res, err); }
 });
 
 module.exports = router;

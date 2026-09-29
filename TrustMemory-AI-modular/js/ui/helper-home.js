@@ -5,6 +5,9 @@
    ========================================================================= */
 
 let helperHomeData = null;
+let helperRecord = null;          // what the agency remembers from her own words
+let helperRecordOpen = null;      // index of the fact whose "This is wrong" box is open
+let helperRecordMsg = '';
 
 function hhDate(d){
   if(!d) return '';
@@ -60,6 +63,7 @@ function pageHelperHome(){
       <div class="section"><h2>What you agreed</h2><div class="card">${promises}${resolved}</div></div>
       <div class="section"><h2>Your recent calls</h2><div class="card">${calls}</div></div>
     </div>
+    ${helperRecordHtml()}
     <div class="section">
       <div class="card" style="font-size:12.5px; color:var(--ink-soft); line-height:1.6;">
         <b style="color:var(--ink);">What the agency keeps on record.</b> Calls are recorded and remembered so the agency can support you:
@@ -68,8 +72,74 @@ function pageHelperHome(){
     </div>`;
 }
 
+/** Her record, from her own words only, with an inline "This is wrong" for each fact. */
+function helperRecordHtml(){
+  const r = helperRecord;
+  let body;
+  if(!r) body = '<div style="font-size:12.5px; color:var(--ink-soft);">Reading what the agency has on record…</div>';
+  else if(r.error) body = `<div style="font-size:12.5px; color:var(--rust);">${escapeHtml(r.error)}</div>`;
+  else if(!r.facts.length) body = emptyState('Nothing on record yet', 'What you tell the agency on calls and in this app will appear here.');
+  else body = r.facts.map((f, i) => `<div style="padding:9px 0; border-top:1px solid var(--line);">
+      <div style="display:flex; justify-content:space-between; gap:10px; align-items:flex-start;">
+        <div style="font-size:13px;">${escapeHtml(f.text)}
+          <div style="font-size:11.5px; color:var(--ink-faint); margin-top:2px;">${escapeHtml(f.origin || '')}${f.when ? ' · ' + escapeHtml(hhDate(f.when)) : ''}${f.outdated ? ' · <span class="badge warn">may be out of date</span>' : ''}</div></div>
+        <button class="btn sm" data-rec="${i}" style="flex:none;">This is wrong</button>
+      </div>
+      ${helperRecordOpen === i ? `<form data-recform="${i}" style="display:flex; gap:8px; margin-top:8px;">
+        <input type="text" id="recFix${i}" maxlength="400" placeholder="What is right?" style="flex:1;">
+        <button class="btn sm primary" type="submit">Send</button></form>` : ''}
+    </div>`).join('');
+  const corr = r && r.corrections && r.corrections.length
+    ? `<div style="margin-top:12px; font-size:12px; color:var(--ink-soft);"><b style="color:var(--ink);">Your corrections:</b> ${r.corrections.map(c => escapeHtml(c.correction) + ' (' + escapeHtml(hhDate(c.created_at)) + ')').join('; ')}</div>`
+    : '';
+  return `<div class="section"><h2>What the agency has on record</h2>
+    <div class="card">
+      <div style="font-size:12.5px; color:var(--ink-soft); margin-bottom:6px;">What the agency remembers from what you said yourself. If something is wrong, tell them; your correction replaces it on the next call.</div>
+      ${body}${corr}
+      ${helperRecordMsg ? `<div style="font-size:12.5px; color:var(--teal); margin-top:8px;">${escapeHtml(helperRecordMsg)}</div>` : ''}
+    </div></div>`;
+}
+
+async function helperLoadRecord(){
+  try {
+    const res = await fetch('/api/me/record');
+    const d = await res.json().catch(() => ({}));
+    helperRecord = res.ok ? d : {error: d.error || 'Could not load your record.'};
+  } catch(e){
+    helperRecord = {error: 'Cannot reach the agency server.'};
+  }
+  if(route.page === 'helperHome') renderCurrentPage();
+}
+
+function helperWireRecord(){
+  document.querySelectorAll('[data-rec]').forEach(b => {
+    b.onclick = () => { const i = Number(b.dataset.rec); helperRecordOpen = helperRecordOpen === i ? null : i; helperRecordMsg = ''; renderCurrentPage(); };
+  });
+  document.querySelectorAll('[data-recform]').forEach(f => {
+    f.onsubmit = async e => {
+      e.preventDefault();
+      const i = Number(f.dataset.recform);
+      const fact = helperRecord && helperRecord.facts[i] ? helperRecord.facts[i].text : '';
+      const input = document.getElementById('recFix' + i);
+      const correction = input ? input.value.trim() : '';
+      try {
+        const res = await fetch('/api/me/record/correction', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({fact, correction})});
+        const d = await res.json().catch(() => ({}));
+        if(!res.ok) throw new Error(d.error || 'Could not send your correction.');
+        helperRecordOpen = null;
+        helperRecordMsg = 'Thank you. The agency will use your correction from the next call.';
+        helperRecord = null;
+        helperLoadRecord();
+      } catch(err){ helperRecordMsg = err.message; }
+      renderCurrentPage();
+    };
+  });
+}
+
 async function wireHelperHome(){
   if(typeof reqWire === 'function') reqWire();
+  helperWireRecord();
+  if(!helperRecord) helperLoadRecord();
   if(helperHomeData) return;
   try {
     const res = await fetch('/api/me/helper');

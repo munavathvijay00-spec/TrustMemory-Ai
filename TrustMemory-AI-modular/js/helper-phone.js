@@ -20,7 +20,7 @@
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 
   const $ = id => document.getElementById(id);
-  const state = { phase: 'off', call: null, sessionId: null, lines: [], timerStart: 0, timer: null, poll: null, ring: null, audio: null, rec: null, listenTries: 0, busy: false, lang: 'en-IN' };
+  const state = { phase: 'off', call: null, sessionId: null, lines: [], timerStart: 0, timer: null, poll: null, ring: null, audio: null, rec: null, listenTries: 0, busy: false, lang: 'en-IN', azure: false, player: null };
 
   // What the helper sees in her call language. The agent's lines arrive already in that language.
   const TEXT = {
@@ -40,7 +40,8 @@
     $('hpTyped').placeholder = t('typed');
     $('hpListen').textContent = t('listening');
     $('hpVoiceNote').textContent = '';
-    if(state.lang !== 'en-IN' && 'speechSynthesis' in window && !voiceFor(state.lang)){
+    // With the agency's neural voices (Azure) switched on, Hindi and Telugu are spoken even without a device voice.
+    if(state.lang !== 'en-IN' && !state.azure && 'speechSynthesis' in window && !voiceFor(state.lang)){
       $('hpVoiceNote').textContent = 'No ' + (state.lang === 'hi-IN' ? 'Hindi' : 'Telugu') + ' voice is installed on this device, so the agency words are shown here to read instead of spoken.';
     }
   }
@@ -118,9 +119,41 @@
     return v.find(x => /en-IN/i.test(x.lang)) || v.find(x => /en-GB/i.test(x.lang) && /female/i.test(x.name)) || v.find(x => /^en/i.test(x.lang)) || null;
   }
 
+  /** Play the line in the agency's neural voice (Azure). Resolves when playback ends; rejects to fall back. */
+  async function neuralSpeak(text){
+    const res = await fetch('/api/voice/tts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text: text.slice(0, 600), lang: state.lang.slice(0, 2), session_id: state.sessionId})});
+    if(!res.ok) throw new Error('tts ' + res.status);
+    const url = URL.createObjectURL(await res.blob());
+    try {
+      await new Promise((resolve, reject) => {
+        const a = new Audio(url);
+        state.player = a;
+        a.onended = resolve; a.onerror = reject;
+        setTimeout(resolve, Math.min(30000, 3000 + text.length * 90));
+        a.play().catch(reject);
+      });
+    } finally {
+      state.player = null;
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  /** Which voice speaks this line: neural for Hindi/Telugu (or when the device has no voice at all). */
+  function useNeural(){
+    if(!state.azure) return false;
+    if(state.lang !== 'en-IN') return true;
+    return !('speechSynthesis' in window) || !speechSynthesis.getVoices().length;
+  }
+
   function speak(text, done){
     $('hpWave').classList.add('active');
     const finish = () => { $('hpWave').classList.remove('active'); if(done) done(); };
+    if(useNeural()){
+      let settled = false;
+      neuralSpeak(text).then(() => { if(!settled){ settled = true; finish(); } })
+        .catch(() => { if(!settled){ settled = true; state.azure = false; setLanguage(state.lang); $('hpWave').classList.remove('active'); speak(text, done); } });
+      return;
+    }
     if(!('speechSynthesis' in window)){ finish(); return; }
     // No voice for Hindi or Telugu on this device: an English voice cannot read that script,
     // so the line stays on screen and the call carries on after a short reading pause.
@@ -263,6 +296,7 @@
   function endLocal(message){
     stopRing(); stopListening();
     if('speechSynthesis' in window) speechSynthesis.cancel();
+    if(state.player){ try { state.player.pause(); } catch(e){} state.player = null; }
     clearInterval(state.timer);
     state.sessionId = null; state.call = null; state.busy = false;
     show('ended'); hint(message || '');
@@ -273,6 +307,8 @@
 
   async function boot(){
     show('off');
+    // Are the agency's neural voices (Azure AI Speech) available? Checked once; failures keep the browser voice.
+    try { const st = await api('/api/voice/tts/status'); state.azure = Boolean(st && st.azure); } catch(e){ state.azure = false; }
     try {
       const helpers = await api('/api/helpers');
       const h = helpers.find(x => x.id === HELPER_ID);

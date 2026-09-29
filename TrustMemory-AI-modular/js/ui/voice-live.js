@@ -406,6 +406,50 @@ function lvDiffLines(before, after){
 }
 
 /** A plain-text call summary for the coordinator, shared through WhatsApp (wa.me link, no API key needed). */
+/* ------------------------------------------------------------------ WhatsApp follow-up draft (nothing is sent) */
+
+async function lvDraftFollowup(){
+  const s = lvState(); if(!s || !s.sessionId) return;
+  s.followup = {status:'loading'}; lvRender();
+  try {
+    const r = await fetch('/api/voice/followup-draft', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({session_id: s.sessionId})});
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(d.error || 'Could not write a draft.');
+    s.followup = {status:'ok', text: d.text, lang: d.lang};
+  } catch(e){ s.followup = {status:'error', error: e.message}; }
+  lvRender();
+}
+
+function lvFollowupText(){
+  const el = document.getElementById('lvFollowText');
+  const s = lvState();
+  return el ? el.value : (s && s.followup && s.followup.text) || '';
+}
+
+function lvFollowupCopy(){
+  const text = lvFollowupText();
+  const done = () => { const b = document.getElementById('lvFollowCopy'); if(b) b.textContent = 'Copied'; };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(() => {});
+}
+
+function lvFollowupOpen(){
+  window.open('https://wa.me/?text=' + encodeURIComponent(lvFollowupText()), '_blank', 'noopener');
+}
+
+function lvFollowupHtml(s){
+  const f = s.followup; if(!f) return '';
+  if(f.status === 'loading') return `<div style="font-size:12px; color:var(--ink-soft); margin-top:10px;">Writing a short follow-up in the call's language…</div>`;
+  if(f.status === 'error') return `<div style="font-size:12px; color:var(--rust); margin-top:10px;">${escapeHtml(f.error)}</div>`;
+  return `<div style="margin-top:10px;">
+    <div style="font-size:11px; color:var(--ink-soft); margin-bottom:4px;">Draft for ${escapeHtml(s.helperName)}. Edit it, then send it from your own WhatsApp. Nothing is sent from here.</div>
+    <textarea id="lvFollowText" rows="4" style="width:100%; font:inherit; font-size:13px; padding:8px 10px; border:1px solid var(--line-strong); border-radius:8px;" oninput="if(window.LIVE_VOICE && window.LIVE_VOICE.followup) window.LIVE_VOICE.followup.text = this.value">${escapeHtml(f.text)}</textarea>
+    <div style="display:flex; gap:8px; margin-top:6px;">
+      <button class="btn sm" id="lvFollowCopy" onclick="lvFollowupCopy()">Copy</button>
+      <button class="btn sm primary" onclick="lvFollowupOpen()">Open in WhatsApp</button>
+    </div>
+  </div>`;
+}
+
 function lvWhatsAppLink(s){
   const r = s.result; if(!r) return '';
   const o = r.outcome || {};
@@ -773,9 +817,11 @@ function lvResultPanel(s){
       ${propHtml}
       <div style="display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center;">
         <a class="btn sm" href="${lvWhatsAppLink(s)}" target="_blank" rel="noopener" style="text-decoration:none;">Share summary on WhatsApp</a>
+        <button class="btn sm" onclick="lvDraftFollowup()" ${s.followup && s.followup.status === 'loading' ? 'disabled' : ''}>✎ Draft a WhatsApp follow-up</button>
         <button class="btn sm brass" onclick="lvStartFollowUp()">↻ Run the follow-up call now</button>
         <span style="font-size:11px; color:var(--ink-soft);">In practice this call happens on the follow-up date. The agent recalls what was promised and asks whether it held.</span>
       </div>
+      ${lvFollowupHtml(s)}
     </div>`;
 }
 

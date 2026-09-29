@@ -124,7 +124,14 @@ async function recall(query, { tags, tagsMatch = 'any', budget = 'low', maxToken
 
 /** Consolidated, evidence-backed beliefs Hindsight has formed (fact type "observation"). */
 async function observations(query, { tags, limit = 12 } = {}) {
-  return recall(query, { tags, types: ['observation'], budget: 'mid', maxTokens: 2500, limit, withSources: true });
+  const opts = { tags, types: ['observation'], budget: 'mid', maxTokens: 2500, limit, withSources: true };
+  try {
+    return await recall(query, opts);
+  } catch (err) {
+    // The bank-wide (untagged) query occasionally fails upstream after ~10 s; a second try usually succeeds.
+    if (err.status >= 500 || /timeout|fetch failed/i.test(err.message)) return recall(query, opts);
+    throw err;
+  }
 }
 
 /* ------------------------------------------------------------------ reflect */

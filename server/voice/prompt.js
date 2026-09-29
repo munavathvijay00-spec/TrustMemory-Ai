@@ -31,12 +31,12 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
   // Keep the prompt lean: every turn resends it, and the free tier meters tokens per minute.
   const trimmed = memory.facts.slice(0, 11).map((f, i) => {
     const text = String(f.text).split(' | ')[0].trim(); // drop Hindsight's "| When: ... | Involving: ..." suffix
-    return { tag: f.tag || ('m' + (i + 1)), text: text.length > 220 ? text.slice(0, 217) + '...' : text, mentionedAt: f.mentionedAt, origin: f.origin };
+    return { tag: f.tag || ('m' + (i + 1)), text: text.length > 220 ? text.slice(0, 217) + '...' : text, mentionedAt: f.mentionedAt, origin: f.origin, outdated: f.outdated };
   });
   const memLines = memory.source === 'disabled'
     ? '- (memory is switched off for this call: you know nothing about this helper beyond the header above)'
     : trimmed.length
-      ? trimmed.map((f, i) => '[' + (f.tag || ('m' + (i + 1))) + '] ' + (f.origin === 'household' ? '(said by the household) ' : '') + f.text + (f.mentionedAt ? ' (' + String(f.mentionedAt).slice(0, 10) + ')' : '')).join('\n')
+      ? trimmed.map((f, i) => '[' + (f.tag || ('m' + (i + 1))) + '] ' + (f.origin === 'household' ? '(said by the household) ' : f.origin === 'correction' ? '(her correction) ' : '') + f.text + (f.mentionedAt ? (f.outdated ? ' (said on ' + String(f.mentionedAt).slice(0, 10) + ', may be outdated)' : ' (' + String(f.mentionedAt).slice(0, 10) + ')') : '')).join('\n')
       : '- (nothing on record yet. This is the first conversation with this helper.)';
   const keyFact = trimmed.find(f => f.origin !== 'household' && /commit|arrang|agreed|plan|will take|neighbour|bus|school|backup|message the/i.test(f.text)) || trimmed.find(f => f.origin !== 'household') || trimmed[0];
   const keyBlock = memory.source !== 'disabled' && keyFact
@@ -103,6 +103,8 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     '- Reference remembered facts as a person who was there would ("last time you mentioned..."). Never invent a memory that is not listed above.',
     '- Every remembered fact describes the past, as of the date shown next to it. Health, family situations, travel and other circumstances may have changed since. Never state a remembered condition as current ("I see you are in hospital"). Refer to it as something she mentioned before and ask how things are now ("Last time you mentioned you were unwell. How are you feeling now?").',
     '- If there is nothing on record, do not pretend there is.',
+    '- A memory marked (her correction) is what she told the agency is right. If it contradicts an older fact, trust the correction and never repeat the older fact.',
+    '- A memory marked "may be outdated" is an old temporary circumstance. Never mention it as current; at most ask how things are now.',
     '',
     'HOW TO RUN THE CALL (goals, not a script):',
     '- Open by checking it is an okay time. If she cannot talk, agree a specific callback time and close.',

@@ -18,6 +18,20 @@ A voice agent for Indian home-care agencies that remembers every helper, built o
 
 ![A live call: the agent answers from memory and cites the facts it used](docs/screenshots/call.gif)
 
+## What's new here
+
+Most agents with memory use it to answer the next question better. TrustMemory uses [Hindsight](https://github.com/vectorize-io/hindsight) memory in ways a single conversation can't, and treats that memory responsibly:
+
+1. **Memory as evidence, not a verdict.** Late pay mentioned on two calls weeks apart raises a private safety check that shows her own dated words. The rules decide whether to flag; memory supplies the evidence; a coordinator decides what happens next. (`server/care.js`)
+2. **Memory that moves between people.** What the agency learned about a household becomes a briefing for the next helper, in her language, without naming or blaming anyone before her. (`server/care.js`, handover brief)
+3. **Memory that looks ahead.** "Last Dussehra she came back 9 days late" puts her on the call list weeks before this year's festival. (`server/outreach.js`)
+4. **Memory that learns across the agency.** Every kept or broken promise is stored with the coaching approach that preceded it, so a new helper with no history starts from what worked for others with the same kind of problem. (`server/commitments.js`)
+5. **Memory that can be seen, corrected and forgotten.** A helper sees what the agency remembers from her own words and can correct any fact; her correction is retained to Hindsight and takes priority on the next call. Temporary circumstances (unwell, travelling, on leave) older than 30 days are marked as possibly outdated, so the agent asks instead of assuming. A coordinator can have every memory about a helper deleted on request, confirmed by typing her name. (`server/record.js`)
+
+The same call, with and without memory (the console's *Compare without memory* button runs this live):
+
+![The same call opening, without memory and with memory](docs/screenshots/with-without-memory.png)
+
 ## Why
 
 Indian home-care agencies place helpers (elder care, child care, cooking, cleaning) with households. What makes a placement work lives in one coordinator's head: that Radha's daughter's school now starts at 8:00, that she asked not to be called before 10, that last Dussehra she went home and came back 9 days late. When that coordinator is busy or leaves, the agency forgets, and the helper quits or the household is left without cover. TrustMemory gives the agency a memory, and agents that use it.
@@ -32,6 +46,8 @@ Indian home-care agencies place helpers (elder care, child care, cooking, cleani
 | **Keeps promises honest** | Every promise gets a check-in date and the coaching approach used; the agency learns which approach keeps promises for each kind of problem, across helpers. |
 | **Hands over a home** | When a placement changes, the household's memory becomes a briefing for the next helper, in her language, without naming or blaming anyone. |
 | **Three roles** | Coordinators see everything. Helpers see what they agreed, plan festival leave and tell the agency about problems, with no scores ever. Households give feedback, ask for cover and write what the next helper should know. |
+| **Speaks her language** | With Azure AI Speech configured, the helper's phone speaks Hindi and Telugu in neural voices (te-IN-ShrutiNeural, hi-IN-SwaraNeural); otherwise it uses the browser's voices or shows the text. |
+| **Follows up on WhatsApp** | After a call, the coordinator can draft a short follow-up in the helper's language, built only from what she said and agreed. It is copied or opened in WhatsApp, never sent automatically. |
 
 ## Screens
 
@@ -67,6 +83,8 @@ cp .env.example .env      # set GROQ_API_KEYS and HINDSIGHT_API_KEY
 npm run seed:memory       # once: dated history, mission, directives, standing profiles
 npm start                 # http://localhost:3000
 ```
+
+Optional: set `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` (for example `centralindia`) to give the phone screen neural Hindi and Telugu voices.
 
 Three demo accounts are created on first start: `coordinator@trustmemory.demo`, `radha@trustmemory.demo` (helper) and `gupta@trustmemory.demo` (household). Their passwords come from `DEMO_COORDINATOR_PASSWORD`, `DEMO_HELPER_PASSWORD` and `DEMO_HOUSEHOLD_PASSWORD` in `.env`; if unset, random ones are printed once in the server log.
 
@@ -171,6 +189,10 @@ The coordinator console and the helper phone screen share one server-side sessio
 | GET | `/api/memory/commitments?helper=` | Commitment ledger: promises, kept rate, and which coaching approach works with the helper |
 | GET | `/api/activity` | Last 50 agent activity rows |
 | POST | `/api/voice/session` | Start a call: recall memory, generate the opening line. Body `{helper_id, scenario, late_count, use_memory}` |
+| GET | `/api/me/record` · POST `/api/me/record/correction` | The helper's own record (from her words only) and her corrections |
+| POST | `/api/record/:helperId/forget` | Coordinator deletes every memory about a helper; body `{confirm_name}` |
+| GET | `/api/voice/tts/status` · POST `/api/voice/tts` | Azure neural speech for the phone screen (helper: own call only) |
+| POST | `/api/voice/followup-draft` | WhatsApp follow-up draft in the call's language, for a completed call |
 | POST | `/api/voice/ring` | Ring the helper's phone screen for a session |
 | GET | `/api/voice/incoming?helper=` | Phone screen poll for a ringing call (unanswered rings become `missed` after 60 s) |
 | POST | `/api/voice/answer` | Accept or decline. Body `{session_id, accept}` |

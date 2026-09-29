@@ -20,6 +20,7 @@ const authRoutes = require('./auth-routes');
 const careRoutes = require('./care-routes');
 const outreachRoutes = require('./outreach-routes');
 const requestRoutes = require('./request-routes');
+const recordRoutes = require('./record-routes');
 
 function createApp({
   port = process.env.PORT || 3000,
@@ -65,6 +66,7 @@ function createApp({
   app.use(careRoutes);      // handover brief, safety signals
   app.use(outreachRoutes);  // today's calls, learning across helpers
   app.use(requestRoutes);   // requests and preferences from helpers and households
+  app.use(recordRoutes);    // what is on record: view, correct, forget
 
   /* ---------------------------------------------------------------- read-only data for the dashboard */
 

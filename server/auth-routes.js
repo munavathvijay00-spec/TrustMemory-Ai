@@ -36,6 +36,9 @@ function helperRelayAllowed(req, account) {
   const m = req.path.match(/^\/api\/voice\/session\/([^/]+)$/);
   if (req.method === 'GET' && m) return sessionHelperId(decodeURIComponent(m[1])) === account.person_id;
   if (req.method === 'POST' && RELAY_POSTS.includes(req.path)) return sessionHelperId((req.body || {}).session_id) === account.person_id;
+  // Neural voice for her own call's lines (text is capped at 600 characters by the route).
+  if (req.method === 'GET' && req.path === '/api/voice/tts/status') return true;
+  if (req.method === 'POST' && req.path === '/api/voice/tts') return sessionHelperId((req.body || {}).session_id) === account.person_id;
   return false;
 }
 
