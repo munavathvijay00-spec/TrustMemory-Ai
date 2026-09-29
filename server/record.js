@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Remember responsibly: memory a helper can see, correct and have forgotten, and facts about
  * temporary circumstances that expire.
@@ -137,13 +138,17 @@ async function recordFor(helperId) {
     facts = localRecord(helper.id);
   }
   markExpired(facts.map(f => Object.assign(f, { mentionedAt: f.when })));
-  for (const f of facts) delete f.mentionedAt;
+  for (const f of facts) delete /** @type {any} */ (f).mentionedAt;
   facts.sort((a, b) => String(b.when).localeCompare(String(a.when)));
   return { helper: { id: helper.id, name: helper.name }, facts, corrections: correctionsFor(helper.id), source };
 }
 
 /* ------------------------------------------------------------------ correction */
 
+/**
+ * @param {string} helperId
+ * @param {{ fact?: string, correction?: string, memory_id?: string }} [input]
+ */
 function correct(helperId, { fact, correction, memory_id: memoryId } = {}) {
   const helper = helperRow(helperId);
   if (!helper) throw new NotFoundError('Unknown helper.');

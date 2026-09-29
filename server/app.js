@@ -24,6 +24,7 @@ const recordRoutes = require('./record-routes');
 const frictionRoutes = require('./friction-routes');
 const sidesRoutes = require('./sides-routes');
 const sinceRoutes = require('./since-routes');
+const { securityHeaders } = require('./security-headers');
 
 function createApp({
   port = process.env.PORT || 3000,
@@ -45,7 +46,9 @@ function createApp({
     }
   }
 
+  app.disable('x-powered-by');
   app.use(logger);
+  app.use(securityHeaders);
   // Express matches routes case-insensitively, but access control, rate limits and validation
   // compare lowercase paths; refuse /API/..., /Api/... so nothing can slip past them.
   app.use((req, res, next) => (/^\/api(\/|$)/i.test(req.path) && !/^\/api(\/|$)/.test(req.path)

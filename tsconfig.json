@@ -1,0 +1,15 @@
+{
+  "//": "Type-checks the plain-JS files that opt in with // @ts-check. Nothing is compiled.",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "strict": false,
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "types": ["node"],
+    "skipLibCheck": true
+  },
+  "files": ["server/dates.js", "server/rate-limit.js", "server/security-headers.js", "server/validate.js", "server/hindsight.js", "server/retain-queue.js", "server/auth.js", "server/record.js", "server/since.js", "server/friction.js"]
+}

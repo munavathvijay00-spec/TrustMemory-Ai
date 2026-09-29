@@ -9,7 +9,9 @@
     "server": "node server/index.js",
     "dev": "node server/index.js",
     "test": "node --test test/*.test.js",
-    "lint": "eslint server test eslint.config.js",
+    "test:browser": "node --test test/browser.e2e.js",
+    "lint": "eslint server test TrustMemory-AI-modular/js eslint.config.js",
+    "typecheck": "tsc -p tsconfig.json",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=\"server/**\" --test-coverage-lines=75 test/*.test.js",
     "seed:memory": "node server/seed-memory.js",
     "seed:memory:dry": "node server/seed-memory.js --dry-run",
@@ -24,7 +26,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@types/node": "^22.20.4",
     "eslint": "^9.39.5",
-    "globals": "^17.12.0"
+    "globals": "^17.12.0",
+    "puppeteer-core": "^24.43.1",
+    "typescript": "^5.9.3"
   }
 }

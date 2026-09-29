@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Hindsight memory client (REST, spec 0.10.x).
  * Works against Hindsight Cloud (api.hindsight.vectorize.io + API key) or a
@@ -20,6 +21,15 @@ const BASE_URL = (process.env.HINDSIGHT_API_URL || 'https://api.hindsight.vector
 const API_KEY = process.env.HINDSIGHT_API_KEY || '';
 const BANK_ID = process.env.HINDSIGHT_BANK_ID || 'trustmemory-agency';
 
+/**
+ * @typedef {Error & { status?: number }} HindsightError
+ * @typedef {{ method?: string, body?: any, timeoutMs?: number }} RequestOptions
+ * @typedef {{ content: string, context?: string, documentId?: string, timestamp?: string, metadata?: Record<string, any>, tags?: string[] }} RetainItem
+ * @typedef {{ tags?: string[], tagsMatch?: string, budget?: string, maxTokens?: number, limit?: number, types?: string[], preferObservations?: boolean, withSources?: boolean }} RecallOptions
+ * @typedef {{ tags?: string[], tagsMatch?: string, budget?: string, context?: string, responseSchema?: object, applyAllDirectives?: boolean, maxTokens?: number }} ReflectOptions
+ * @typedef {{ id: string, text: string, type: string, context: string, mentionedAt: string, occurredStart: string, documentId: string, tags: string[], entities: any[], sourceFactIds: string[], metadata: Record<string, any>, evidence?: { text: string, when: string }[] }} Memory
+ */
+
 function isConfigured() {
   // Cloud needs a key. A self-hosted server (non-cloud URL, e.g. http://localhost:8888) needs none.
   if (API_KEY) return true;
@@ -31,6 +41,11 @@ function bankPath() {
   return `${BASE_URL}/v1/default/banks/${encodeURIComponent(BANK_ID)}`;
 }
 
+/**
+ * @param {string} path
+ * @param {RequestOptions} [options]
+ * @returns {Promise<any>}
+ */
 async function request(path, { method = 'POST', body, timeoutMs = 45000 } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`;
@@ -56,6 +71,7 @@ async function request(path, { method = 'POST', body, timeoutMs = 45000 } = {}) 
   if (!res.ok) {
     let detail = (data && (data.detail || data.message || data.error)) || text || res.statusText;
     if (typeof detail !== 'string') detail = JSON.stringify(detail);
+    /** @type {HindsightError} */
     const err = new Error(`Hindsight ${method} ${path} failed (${res.status}): ${String(detail).slice(0, 300)}`);
     err.status = res.status;
     throw err;
@@ -70,6 +86,10 @@ function isBankMissing(err) {
 /* ------------------------------------------------------------------ retain */
 
 /** items: [{ content, context, documentId, timestamp, metadata, tags }] */
+/**
+ * @param {RetainItem[]} items
+ * @param {{ async?: boolean }} [options]
+ */
 async function retain(items, { async: isAsync = false } = {}) {
   if (!items.length) return { items_count: 0 };
   const body = {
@@ -89,6 +109,7 @@ async function retain(items, { async: isAsync = false } = {}) {
 
 /* ------------------------------------------------------------------ recall */
 
+/** @param {any} r @returns {Memory} */
 function mapResult(r) {
   return {
     id: r.id || '',
@@ -105,6 +126,11 @@ function mapResult(r) {
   };
 }
 
+/**
+ * @param {string} query
+ * @param {RecallOptions} [options]
+ * @returns {Promise<Memory[]>}
+ */
 async function recall(query, { tags, tagsMatch = 'any', budget = 'low', maxTokens = 1500, limit = 10, types, preferObservations, withSources = false } = {}) {
   const body = { query, budget, max_tokens: maxTokens };
   if (withSources) body.include = { source_facts: {} };
@@ -134,6 +160,11 @@ async function recall(query, { tags, tagsMatch = 'any', budget = 'low', maxToken
 }
 
 /** Consolidated, evidence-backed beliefs Hindsight has formed (fact type "observation"). */
+/**
+ * @param {string} query
+ * @param {{ tags?: string[], limit?: number }} [options]
+ * @returns {Promise<Memory[]>}
+ */
 async function observations(query, { tags, limit = 12 } = {}) {
   const opts = { tags, types: ['observation'], budget: 'mid', maxTokens: 2500, limit, withSources: true };
   try {
@@ -147,6 +178,10 @@ async function observations(query, { tags, limit = 12 } = {}) {
 
 /* ------------------------------------------------------------------ reflect */
 
+/**
+ * @param {string} query
+ * @param {ReflectOptions} [options]
+ */
 async function reflect(query, { tags, tagsMatch = 'any', budget = 'low', context, responseSchema, applyAllDirectives = true, maxTokens } = {}) {
   // include.facts asks Hindsight to return what the answer was based on (memories, mental models, directives).
   const body = { query, budget, apply_all_directives: applyAllDirectives, include: { facts: {} } };

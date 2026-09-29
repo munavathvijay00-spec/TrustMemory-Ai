@@ -45,3 +45,19 @@ test('hardening: real calendar dates only, and today in India', () => {
   assert.equal(istDate(new Date('2026-09-29T20:00:00Z')), '2026-09-30');
   assert.equal(istDate(new Date('2026-09-29T10:00:00Z')), '2026-09-29');
 });
+
+test('hardening: every response carries the security headers, and no framework banner', async () => {
+  const { startServer } = require('./support');
+  const { createApp } = require('../server/app');
+  const srv = await startServer(createApp({ port: 0 }));
+  try {
+    for (const path of ['/', '/api/health']) {
+      const r = await srv.request('GET', path);
+      assert.match(r.headers['content-security-policy'], /default-src 'self'/);
+      assert.match(r.headers['content-security-policy'], /frame-ancestors 'none'/);
+      assert.equal(r.headers['x-content-type-options'], 'nosniff');
+      assert.equal(r.headers['x-frame-options'], 'DENY');
+      assert.equal(r.headers['x-powered-by'], undefined);
+    }
+  } finally { await srv.close(); }
+});

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Request validation for the endpoints that take user input.
  *

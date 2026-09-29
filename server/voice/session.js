@@ -385,8 +385,11 @@ async function saveCall(s) {
     retain = { status: 'saving', detail: 'Retaining the transcript and summary to Hindsight…', bank: hindsight.BANK_ID };
     const t0 = Date.now();
     // Tracked so a graceful shutdown can wait for it, or hand it to the retry queue.
-    const pending = inflight.startRetain({ items: retainItems, helperId: s.helper.id, callId });
+    // Written to the retry queue before sending, so even a crash mid-retain cannot lose the call's memory.
+    const heldJob = retainQueue.hold(retainItems, { helperId: s.helper.id, callId });
+    const pending = inflight.startRetain({ items: retainItems, helperId: s.helper.id, callId, heldJob });
     inflight.settleRetain(pending, hindsight.retain(retainItems).then(res => {
+      retainQueue.release(heldJob);
       const count = res && res.items_count != null ? res.items_count : 2;
       const done = { status: 'ok', detail: 'Retained ' + count + ' items in bank ' + hindsight.BANK_ID + ' in ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s. Hindsight updates the standing profile after consolidation.', bank: hindsight.BANK_ID };
       if (s.result) s.result.retain = done;
@@ -397,7 +400,7 @@ async function saveCall(s) {
       record(s.trace, 'retain', t0, true, count + ' items', steps);
     }).catch(err => {
       // Already written to the retry queue by a shutdown drain: do not queue it twice.
-      const jobId = pending.handedOff ? pending.jobId : retainQueue.enqueue(retainItems, { helperId: s.helper.id, callId, error: err.message });
+      const jobId = pending.handedOff ? pending.jobId : retainQueue.escalate(heldJob, err.message);
       const queued = { status: 'queued', detail: 'Hindsight was unreachable (' + String(err.message).slice(0, 120) + '). Saved locally and queued for automatic retry (' + jobId + ').', bank: hindsight.BANK_ID };
       if (s.result) s.result.retain = queued;
       record(s.trace, 'retain', t0, false, String(err.message).slice(0, 120) + ' (queued ' + jobId + ')', steps);

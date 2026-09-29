@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * In-memory token-bucket rate limiter, per client IP and per route group.
  *

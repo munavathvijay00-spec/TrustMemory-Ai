@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Durable retry for Hindsight retains.
  *
@@ -5,6 +6,10 @@
  * timeout, rate limit), the items are written to the retain_jobs table and retried in the
  * background with backoff, including after a server restart. The UI can show how many are
  * still waiting via pendingCount().
+ *
+ * A call's retain is also held here BEFORE it is sent (status 'held'), and released when
+ * Hindsight confirms it. If the process dies in between, even without a clean shutdown, the
+ * held job becomes due after HOLD_MS and is retried, so a crash cannot drop a call's memory.
  */
 const db = require('./db');
 const hindsight = require('./hindsight');
@@ -12,6 +17,7 @@ const hindsight = require('./hindsight');
 const MAX_ATTEMPTS = 6;
 const TICK_MS = 60 * 1000;
 const BACKOFF_MS = [30e3, 60e3, 120e3, 300e3, 600e3, 1200e3];
+const HOLD_MS = 10 * 60 * 1000;   // far longer than any retain; only a dead process leaves one this old
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS retain_jobs (
@@ -40,6 +46,27 @@ function enqueue(items, { helperId = null, callId = null, error = '' } = {}) {
   return id;
 }
 
+/** Write the items down before sending them. Not counted as waiting; retried only if never released. */
+function hold(items, { helperId = null, callId = null } = {}) {
+  const id = 'rj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  db.prepare(`INSERT INTO retain_jobs (id, helper_id, call_id, payload, status, attempts, last_error, next_attempt_at, created_at, updated_at)
+              VALUES (?, ?, ?, ?, 'held', 0, NULL, ?, ?, ?)`)
+    .run(id, helperId, callId, JSON.stringify(items), new Date(Date.now() + HOLD_MS).toISOString(), nowIso(), nowIso());
+  return id;
+}
+
+/** Hindsight confirmed the retain: nothing left to retry. */
+function release(id) {
+  db.prepare("UPDATE retain_jobs SET status = 'done', last_error = NULL, updated_at = ? WHERE id = ?").run(nowIso(), id);
+}
+
+/** The retain failed (or the server is shutting down): retry the held job with the normal backoff. */
+function escalate(id, error = '') {
+  db.prepare("UPDATE retain_jobs SET status = 'pending', attempts = 1, last_error = ?, next_attempt_at = ?, updated_at = ? WHERE id = ? AND status != 'done'")
+    .run(String(error).slice(0, 500), new Date(Date.now() + BACKOFF_MS[0]).toISOString(), nowIso(), id);
+  return id;
+}
+
 function pendingCount() {
   const row = db.prepare("SELECT COUNT(*) AS n FROM retain_jobs WHERE status = 'pending'").get();
   return row ? row.n : 0;
@@ -52,7 +79,8 @@ async function runOnce() {
   running = true;
   let attempted = 0;
   try {
-    const due = db.prepare("SELECT * FROM retain_jobs WHERE status = 'pending' AND next_attempt_at <= ? ORDER BY created_at ASC LIMIT 10").all(nowIso());
+    // 'held' jobs past their hold time belong to a process that died before Hindsight confirmed them.
+    const due = db.prepare("SELECT * FROM retain_jobs WHERE status IN ('pending', 'held') AND next_attempt_at <= ? ORDER BY created_at ASC LIMIT 10").all(nowIso());
     for (const job of due) {
       attempted += 1;
       try {
@@ -80,4 +108,4 @@ function start() {
   setInterval(() => { runOnce().catch(() => {}); }, TICK_MS).unref();
 }
 
-module.exports = { enqueue, pendingCount, runOnce, start };
+module.exports = { enqueue, hold, release, escalate, pendingCount, runOnce, start, HOLD_MS };

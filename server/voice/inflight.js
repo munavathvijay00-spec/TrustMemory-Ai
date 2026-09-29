@@ -21,8 +21,8 @@ function trackSave(promise) {
  * settleRetain() once the retain chain exists; entry.handedOff tells the chain the items are
  * already in the retry queue.
  */
-function startRetain({ items, helperId = null, callId = null }) {
-  const entry = { items, helperId, callId, handedOff: false, jobId: null, promise: null };
+function startRetain({ items, helperId = null, callId = null, heldJob = null }) {
+  const entry = { items, helperId, callId, heldJob, handedOff: false, jobId: null, promise: null };
   RETAINS.add(entry);
   return entry;
 }
@@ -57,7 +57,8 @@ async function drain({ timeoutMs = 10000 } = {}) {
   const jobs = [];
   for (const entry of RETAINS) {
     entry.handedOff = true;
-    entry.jobId = retainQueue.enqueue(entry.items, { helperId: entry.helperId, callId: entry.callId, error: 'Server shut down before Hindsight confirmed the retain.' });
+    const why = 'Server shut down before Hindsight confirmed the retain.';
+    entry.jobId = entry.heldJob ? retainQueue.escalate(entry.heldJob, why) : retainQueue.enqueue(entry.items, { helperId: entry.helperId, callId: entry.callId, error: why });
     jobs.push(entry.jobId);
   }
   RETAINS.clear();

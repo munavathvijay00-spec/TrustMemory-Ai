@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Accounts and sessions for the three roles: coordinator, helper, household.
  *

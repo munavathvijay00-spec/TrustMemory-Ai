@@ -18,7 +18,7 @@
 
 ## Contents
 
-[The problem](#the-problem) · [What it does](#what-it-does) · [How it uses Hindsight](#how-it-uses-hindsight) · [Does memory help?](#does-memory-help) · [Screens](#screens) · [Run it](#run-it) · [Architecture](#architecture) · [Testing](#testing) · [Limits and roadmap](#limits-and-roadmap)
+[The problem](#the-problem) · [What it does](#what-it-does) · [How it uses Hindsight](#how-it-uses-hindsight) · [Does memory help?](#does-memory-help) · [Screens](#screens) · [Run it](#run-it) · [Architecture](#architecture) · [Security and privacy](#security-and-privacy) · [Testing](#testing) · [Limits and roadmap](#limits-and-roadmap)
 
 ## The problem
 
@@ -110,7 +110,7 @@ Full table: [docs/memory-eval.md](docs/memory-eval.md). The console's *Compare w
 
 ### Live
 
-Running at **https://trustmemory-ai.onrender.com**: one Docker web service on Render (Singapore) serving the API and every page, deployed from the `dev` branch with a health check on `/api/health`. It uses the same Hindsight bank as a local run. API keys live in the Render dashboard, never in the repo. The free plan sleeps when idle, so the first visit can take about 50 seconds; local data (calls, requests, sign-ups) resets on each redeploy, while the Hindsight memory is kept.
+Running at **https://trustmemory-ai.onrender.com**: one Docker web service on Render (Singapore) serving the API and every page, deployed from `dev`, the repository's only branch, with a health check on `/api/health`. It uses the same Hindsight bank as a local run. API keys live in the Render dashboard, never in the repo. The free plan sleeps when idle, so the first visit can take about 50 seconds; local data (calls, requests, sign-ups) resets on each redeploy, while the Hindsight memory is kept.
 
 ### Demo accounts
 
@@ -243,18 +243,31 @@ Errors are JSON, `{ "error": "message", "code": "CODE" }`: `400 VALIDATION` or `
 
 </details>
 
+## Security and privacy
+
+- **Roles.** Every `/api` route needs a signed-in session except health and sign-in. Helpers and households reach only `/api/me/*` (and a helper, her own call); everything else is the coordinator's. Tests check each role against each route.
+- **What a helper sees.** Only what she said herself, never scores, household feedback, coordinator notes or safety checks. Private safety notes are tagged to the helper alone, so no household-scoped recall, handover brief or household profile can draw on them.
+- **Passwords and sessions.** scrypt-hashed passwords, random session tokens in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` behind HTTPS), expired sessions pruned, sign-in lockout after repeated failures.
+- **Limits.** Per-client rate limits on voice, memory and sign-in routes; input validation on every write; 64 KB request bodies. Paths are matched the way Express matches them (case, trailing slash), so neither check can be skipped.
+- **Headers.** Content Security Policy (this origin plus Google Fonts; no framing), `nosniff`, `X-Frame-Options: DENY`, a strict referrer policy, and the microphone allowed for this origin only.
+- **Output.** Every name, note and memory shown in the console is escaped; a test renders the pages with hostile input.
+- **Memory.** A call's memory is written to the local retry queue before it is sent to Hindsight, so a crash or restart cannot lose it. Forgetting a helper deletes her Hindsight documents first and changes nothing else unless all of them are gone.
+- **Secrets.** API keys live only in the environment (`.env` locally, the Render dashboard live); none are in the repository or its history.
+
 ## Testing
 
 ```bash
-npm test                 # node:test, 111 tests
-npm run lint             # ESLint 9, recommended rules
+npm test                 # node:test, 114 tests
+npm run lint             # ESLint 9: recommended rules for the server, bug rules for the browser console
+npm run typecheck        # TypeScript checks the core server files marked // @ts-check (nothing is compiled)
+npm run test:browser     # headless Chrome: every page, as every role, on desktop and phone
 npm run test:coverage    # fails if server/ line coverage drops below 75% (currently about 88%)
 npm run eval:memory      # recall accuracy and leaks between helpers, against the live bank
 ```
 
 Tests never touch the network or your data: `test/support.js` uses an in-memory database, blanks every API key and replaces `fetch`, and tests that need Groq or Hindsight install a mock that answers like the real API. They cover the full call flow end to end (ring, answer, turns, hang-up, a single saved record even under parallel completes, missed rings, failed retains landing in the retry queue), access control for all three roles, safety checks, handover briefs, corrections and curation, forgetting, friction, both sides, since-last-call and the memory eval. Every call also records step timings (`trace`) on `GET /api/voice/session/:id`.
 
-CI runs lint and tests on Node 22 and 24 for every push, plus the coverage check on 24.
+CI runs lint, the type check and the tests on Node 22 and 24 for every push, plus the coverage check and the browser test on 24. The browser test signs in with the one-click demo buttons as each role, opens every page, and fails on a JavaScript error, anything the Content Security Policy blocks, a server error, "undefined" or "NaN" on screen, or a page wider than a phone.
 
 ## Limits and roadmap
 
@@ -298,11 +311,11 @@ server/                  Express app, agents, Hindsight and Groq clients, SQLite
   people.js              validated helpers and households   db.js, sqlite-compat.js
   seed-memory.js         seeds the bank                     seed/             feature seed history
   reset-bank.js          back to the seeded state           eval-memory.js    the memory eval
-  validate.js, rate-limit.js, health-routes.js, logger.js, dates.js (dates in India time)
+  validate.js, rate-limit.js, health-routes.js, logger.js, dates.js (dates in India time), security-headers.js
 TrustMemory-AI-modular/  the console for all three roles (index.html) and the helper phone (helper.html);
                          full file map in TrustMemory-AI-modular/README.md
 docs/                    screenshots, memory-eval.md
-test/                    node:test suites
+test/                    node:test suites; browser.e2e.js runs the app in headless Chrome
 ```
 
 </details>

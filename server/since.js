@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * What changed since the last call with a helper: everything the agency learned about her after
  * that call, so the coordinator does not go over old ground. Read-only; nothing is retained.

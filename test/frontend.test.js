@@ -98,11 +98,36 @@ test('frontend: simulated agents are gone and no script references them', () => 
   assert.ok(!fs.existsSync(path.join(ROOT, 'js/agents/matching-agent.js')));
 });
 
-// households-page.js (owned elsewhere) reads an undefined `h` in pageHouseholdDetail; flip this
-// to a normal test once that is fixed.
 test('frontend: household detail page renders', () => {
   const ctx = makeContext();
   for (const src of scriptsFromIndex()) vm.runInContext(fs.readFileSync(path.join(ROOT, src), 'utf8'), ctx, { filename: src });
   vm.runInContext("nav('householdDetail', 'h104')", ctx);
   assert.match(ctx.document.getElementById('content').innerHTML, /Iyer Residence/);
+});
+
+test('frontend: names, notes and memory text are escaped on every page that shows them', () => {
+  const ctx = makeContext();
+  for (const src of scriptsFromIndex()) vm.runInContext(fs.readFileSync(path.join(ROOT, src), 'utf8'), ctx, { filename: src });
+  vm.runInContext('initApp()', ctx);
+  const X = '<img src=x onerror=alert(1)>';
+  ctx.X = X;
+  vm.runInContext(`
+    if (CURRENT_USER) CURRENT_USER.name = X + ' Coordinator';
+    S.helpers[0].name = X; S.helpers[0].location = X;
+    S.households[0].name = X; S.households[0].location = X;
+    const hid = S.helpers[0].id, hhid = S.households[0].id;
+    MEMUI.cache[memuiKey('obs', 'helper', hid)] = { status: 'ok', items: [{ id: 'aaaaaaaa-2222-4333-8444-555555555555', text: X, evidence: [{ text: X, when: '2026-09-01' }] }] };
+    MEMUI.cache[memuiKey('obs', 'household', hhid)] = { status: 'ok', items: [{ text: X, evidence: [] }] };
+  `, ctx);
+  const [hid, hhid] = vm.runInContext('[S.helpers[0].id, S.households[0].id]', ctx);
+  const views = [['dashboard', null], ['people', null], ['people', 'households'], ['helperDetail', hid], ['householdDetail', hhid], ['memory', hid], ['matching', null]];
+  for (const [page, param] of views) {
+    vm.runInContext(`nav(${JSON.stringify(page)}, ${JSON.stringify(param)})`, ctx);
+    const html = ctx.document.getElementById('content').innerHTML;
+    assert.doesNotMatch(html, /auth-split/, `${page} rendered the page, not the sign-in screen`);
+    assert.ok(!html.includes(X), `${page}${param ? '/' + param : ''} shows the raw payload`);
+  }
+  vm.runInContext(`nav('helperDetail', ${JSON.stringify(hid)})`, ctx);
+  const out = ctx.document.getElementById('content').innerHTML;
+  assert.ok(out.includes('&lt;img src=x onerror=alert(1)&gt;'), 'the payload is shown as text');
 });

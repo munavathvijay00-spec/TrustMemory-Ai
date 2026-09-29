@@ -26,6 +26,10 @@ const people = require('./people');
 const router = express.Router();
 
 function fail(res, err) {
+  // Hindsight not reachable (connect timeout, dropped connection): say so, as a gateway error.
+  if (!err.status && /fetch failed|timeout|aborted/i.test(String(err.message) + ' ' + String(err.name))) {
+    return res.status(502).json({ error: 'The memory bank did not answer in time. Try again in a moment.', code: 'MEMORY_UNAVAILABLE' });
+  }
   const status = err.status || 500;
   return res.status(status).json({ error: err.message });
 }

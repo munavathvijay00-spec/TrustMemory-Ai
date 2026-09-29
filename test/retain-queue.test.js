@@ -50,3 +50,32 @@ test('retain-queue: gives up after the maximum attempts and does nothing while H
   makeDue();
   assert.deepEqual(await retainQueue.runOnce(), { attempted: 0 });
 });
+
+test('retain-queue: a retain held before sending is retried if the process died before Hindsight confirmed it', async () => {
+  const sent = [];
+  hindsight.isConfigured = () => true;
+  hindsight.retain = async (items) => { sent.push(items[0].content); return { ok: true }; };
+  const before = retainQueue.pendingCount();
+
+  // Confirmed normally: released, never retried, never counted as waiting.
+  const ok = retainQueue.hold([{ content: 'confirmed call' }], { helperId: 'radha', callId: 'call_ok' });
+  assert.equal(retainQueue.pendingCount(), before, 'a held retain is not "waiting"');
+  retainQueue.release(ok);
+
+  // Failed: the same job becomes an ordinary pending retry (one row, not two).
+  const failed = retainQueue.hold([{ content: 'failed call' }], { callId: 'call_fail' });
+  assert.equal(retainQueue.escalate(failed, '503'), failed);
+  assert.equal(retainQueue.pendingCount(), before + 1);
+  db.prepare("UPDATE retain_jobs SET status = 'done' WHERE id = ?").run(failed);
+
+  // Crashed: never released or escalated; once the hold time passes, the next run retries it.
+  const crashed = retainQueue.hold([{ content: 'call from a crashed process' }], { callId: 'call_crash' });
+  await retainQueue.runOnce();
+  assert.ok(!sent.includes('call from a crashed process'), 'still inside the hold time');
+  db.prepare('UPDATE retain_jobs SET next_attempt_at = ? WHERE id = ?').run(new Date(Date.now() - 1000).toISOString(), crashed);
+  await retainQueue.runOnce();
+  assert.ok(sent.includes('call from a crashed process'));
+  assert.ok(!sent.includes('confirmed call'), 'a released retain is never sent again');
+  assert.equal(db.prepare('SELECT status FROM retain_jobs WHERE id = ?').get(crashed).status, 'done');
+  assert.equal(db.prepare('SELECT status FROM retain_jobs WHERE id = ?').get(ok).status, 'done');
+});

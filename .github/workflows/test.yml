@@ -24,8 +24,14 @@ jobs:
       # server uses the built-in node:sqlite fallback (server/sqlite-compat.js).
       - run: npm ci --ignore-scripts
       - run: npm run lint
+      - run: npm run typecheck
       # Groq and Hindsight are mocked; no secrets are needed or used.
       - run: npm test
       # Line-coverage threshold for server/ (Node built-in coverage); one job is enough.
       - if: matrix.node-version == '24.x'
         run: npm run test:coverage
+      # The app in headless Chrome (preinstalled on GitHub's Ubuntu runners), every page as every role.
+      - if: matrix.node-version == '24.x'
+        run: npm run test:browser
+        env:
+          CHROME_PATH: /usr/bin/google-chrome

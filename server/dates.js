@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Calendar dates as the agency sees them. The agency is in Hyderabad, but the server may run in
  * UTC, where toISOString() is still "yesterday" between 00:00 and 05:30 IST.

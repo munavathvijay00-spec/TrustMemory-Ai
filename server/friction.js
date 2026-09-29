@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Friction check before a placement: read both people's memory (the helper's constraints and
  * the household's expectations) and name the likely clashes before day one, each with the
