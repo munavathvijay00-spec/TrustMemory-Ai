@@ -1,11 +1,22 @@
 # TrustMemory AI
 
 [![Tests](https://github.com/munavathvijay00-spec/TrustMemory-Ai/actions/workflows/test.yml/badge.svg)](https://github.com/munavathvijay00-spec/TrustMemory-Ai/actions/workflows/test.yml)
-![Node](https://img.shields.io/badge/node-22%20%7C%2024-3F6659) ![Memory](https://img.shields.io/badge/memory-Hindsight-B4863F) ![LLM](https://img.shields.io/badge/LLM-Groq-1C2530) ![Calls](https://img.shields.io/badge/calls-English%20%7C%20Hindi%20%7C%20Telugu-5B4A8F)
+![Node](https://img.shields.io/badge/node-22%20%7C%2024-3F6659) ![Memory](https://img.shields.io/badge/memory-Hindsight-B4863F) ![LLM](https://img.shields.io/badge/LLM-Groq-1C2530) ![Calls](https://img.shields.io/badge/calls-English%20%7C%20Hindi%20%7C%20Telugu-5B4A8F) [![Live on Render](https://img.shields.io/badge/live-trustmemory--ai.onrender.com-46E3B7)](https://trustmemory-ai.onrender.com)
 
-**An agency that remembers every helper.** Voice check-ins in English, Hindi and Telugu that recall every earlier call through [Hindsight](https://hindsight.vectorize.io), keep track of every promise, notice what a single call never could, and warn the coordinator before a helper walks away.
+> Lakshmi mentioned her salary was late on three calls, weeks apart. No single call sounded alarming.
+> TrustMemory noticed the pattern and flagged it, privately, for the coordinator.
 
-![Coordinator dashboard](docs/screenshots/dashboard.png)
+A voice agent for Indian home-care agencies that remembers every helper, built on [Hindsight](https://hindsight.vectorize.io) memory.
+
+- **Across calls:** it recalls what the agency knows before its first word and on every turn, and cites every fact it uses.
+- **Across people:** a household's memory becomes a briefing for the next helper, in her language (English, Hindi or Telugu).
+- **Across time:** "last Dussehra she came back 9 days late" puts her on today's call list weeks before the festival.
+
+**Try it in 60 seconds:** open [trustmemory-ai.onrender.com](https://trustmemory-ai.onrender.com), sign in as the coordinator (credentials are in our submission), go to **Dashboard**, then **Today's calls**, then **Ring with this reason**. Code: [github.com/munavathvijay00-spec/TrustMemory-Ai](https://github.com/munavathvijay00-spec/TrustMemory-Ai).
+
+**[Watch the 3-minute demo](https://youtu.be/Skc0GNiy0uk)**
+
+![A live call: the agent answers from memory and cites the facts it used](docs/screenshots/call.gif)
 
 ## Why
 
@@ -24,6 +35,8 @@ Indian home-care agencies place helpers (elder care, child care, cooking, cleani
 
 ## Screens
 
+![Coordinator dashboard](docs/screenshots/dashboard.png)
+
 | Live call, in Telugu | The helper's phone |
 |---|---|
 | ![Live call](docs/screenshots/live-call.png) | ![Phone screen](docs/screenshots/phone.png) |
@@ -32,11 +45,23 @@ Indian home-care agencies place helpers (elder care, child care, cooking, cleani
 | **The helper's own view** | **Dark mode** |
 | ![Helper view](docs/screenshots/helper-home.png) | ![Dark mode](docs/screenshots/dark-dashboard.png) |
 
+## Live deployment
+
+TrustMemory AI is deployed on Render and running at **https://trustmemory-ai.onrender.com**.
+
+- One Docker web service (the `Dockerfile` in this repo) serves the API and all pages: the coordinator console, sign-in, the helper and household views, and the helper phone screen at `/helper.html?helper=radha`.
+- Region Singapore, deployed from the `dev` branch, with a health check on `/api/health`.
+- It uses the same Hindsight bank (`trustmemory-agency`) and Groq models as a local run; secrets are set in the Render dashboard, never in the repo.
+- The free plan sleeps when idle, so the first visit after a quiet spell takes about 50 seconds. Local data (calls, requests, new sign-ups) resets on each redeploy; the Hindsight memory is kept.
+- Sign in with the demo accounts below; passwords are shared with judges on request.
+
 ## Quick start
 
 Requires Node 22.13+ or 24, and Chrome or Edge for speech.
 
 ```bash
+git clone https://github.com/munavathvijay00-spec/TrustMemory-Ai.git
+cd TrustMemory-Ai
 npm ci                    # if better-sqlite3 cannot build: npm ci --ignore-scripts
 cp .env.example .env      # set GROQ_API_KEYS and HINDSIGHT_API_KEY
 npm run seed:memory       # once: dated history, mission, directives, standing profiles
@@ -48,7 +73,7 @@ Three demo accounts are created on first start: `coordinator@trustmemory.demo`, 
 To try a call: sign in as the coordinator, open the helper's phone screen at `/helper.html?helper=radha` in a second window, switch the line on, then ring her from **Voice Agent** or **Today's calls**. Before a demo, `npm run bank:reset -- --yes` returns everything to the seeded state. [DEMO.md](DEMO.md) has a timed three-minute walkthrough.
 
 - **Docker:** `docker build -t trustmemory . && docker run -p 3000:3000 --env-file .env trustmemory`
-- **Render:** `render.yaml` deploys the `dev` branch as a Docker web service; set the secrets in the Render dashboard.
+- **Render:** create a Web Service from this repo (Docker, branch `dev`, health check `/api/health`), or use `render.yaml`; set `GROQ_API_KEYS`, `HINDSIGHT_API_KEY`, the three `DEMO_*_PASSWORD` values and `TRUST_PROXY=1` in the Render dashboard.
 
 ## How memory is used
 
