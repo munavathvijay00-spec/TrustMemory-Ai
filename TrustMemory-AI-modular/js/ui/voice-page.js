@@ -34,7 +34,7 @@ function pageVoice(){
       <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px; margin-bottom:16px;">
         <div>
           <label style="${labelStyle}">Helper</label>
-          <select id="vHelper" onchange="window.VOICE_FORM.helper = this.value; if(typeof reqApplyHelperPref === 'function') reqApplyHelperPref(this.value)" style="${fieldStyle}">
+          <select id="vHelper" onchange="window.VOICE_FORM.helper = this.value; if(typeof reqApplyHelperPref === 'function') reqApplyHelperPref(this.value); sinceRefreshSlots()" style="${fieldStyle}">
             ${S.helpers.map(h => `<option value="${h.id}" ${VF.helper === h.id ? 'selected' : ''}>${escapeHtml(h.name)}</option>`).join('')}
           </select>
           ${typeof reqHelperPrefLine === 'function' ? reqHelperPrefLine(VF.helper) : ''}
@@ -60,6 +60,7 @@ function pageVoice(){
         <label style="${labelStyle}">Reason for calling today (optional)</label>
         <input type="text" id="vPurpose" maxlength="300" value="${escapeHtml(VF.purpose || '')}" placeholder="e.g. Dussehra is in three weeks; last year she came back nine days late" oninput="window.VOICE_FORM.purpose = this.value" style="${fieldStyle}" />
       </div>
+      ${sinceSlot(VF.helper, 'voice')}
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding-top:12px; border-top:1px solid var(--line);">
         <div style="font-size:12px; color:var(--ink-soft);">
           The agent records what happened. The Decision Agent scores it. Helpers never hear scores.
@@ -89,3 +90,82 @@ function pageVoice(){
 }
 
 function wireVoice(){}
+
+/* ------------------------------------------------------------------ what changed since the last call */
+
+// Per helper: {status: 'loading'|'ok'|'error', data, at, open}. Filled in place so a page redraw is not needed.
+const SINCE = {};
+const SINCE_TTL_MS = 60000;
+
+/** A placeholder the loader fills in; used in the Start-a-call form and on the helper page. */
+function sinceSlot(helperId, where){
+  if(!helperId) return '';
+  setTimeout(() => sinceLoad(helperId), 0);
+  return `<div class="since-slot" data-helper="${escapeHtml(helperId)}" data-where="${where}">${sinceHtml(helperId, where)}</div>`;
+}
+
+function sinceHtml(helperId, where){
+  const st = SINCE[helperId];
+  const box = where === 'card'
+    ? 'background:var(--card, #fff); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; margin-bottom:24px;'
+    : 'background:var(--paper, #F7F6F1); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; margin-bottom:16px;';
+  const head = '<div style="font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--ink-soft); margin-bottom:6px;">Since the last call</div>';
+  if(!st || st.status === 'loading') return `<div style="${box}">${head}<div style="font-size:12.5px; color:var(--ink-soft);">Checking what changed…</div></div>`;
+  if(st.status === 'error') return `<div style="${box}">${head}<div style="font-size:12.5px; color:var(--ink-soft);">${escapeHtml(st.error || 'Could not load what changed.')}</div></div>`;
+  const d = st.data;
+  const limit = st.open ? d.items.length : 5;
+  const items = d.items.slice(0, limit).map(i => `
+    <div style="display:flex; gap:10px; align-items:baseline; padding:5px 0; border-top:1px solid var(--line); font-size:12.5px;">
+      <span style="flex:none; min-width:74px; font-family:var(--font-mono); font-size:11px; color:var(--ink-soft);">${escapeHtml(sinceDate(i.when))}</span>
+      <span style="flex:1;">${escapeHtml(i.what)} <span style="color:var(--ink-faint, #8A93A0); font-size:11px;">· ${escapeHtml(i.source)}</span></span>
+    </div>`).join('');
+  const more = d.items.length > 5
+    ? `<button class="btn sm" style="margin-top:6px;" onclick="sinceToggle('${escapeHtml(helperId)}')">${st.open ? 'Show less' : 'Show all ' + d.items.length}</button>` : '';
+  return `<div style="${box}">${head}<div style="font-size:13px; font-weight:600; margin-bottom:${d.items.length ? '6px' : '0'};">${escapeHtml(d.summary)}</div>${items}${more}</div>`;
+}
+
+function sinceDate(isoStr){
+  const t = Date.parse(isoStr || '');
+  return isNaN(t) ? '' : new Date(t).toLocaleDateString('en-GB', {day: 'numeric', month: 'short'});
+}
+
+async function sinceLoad(helperId, force){
+  const st = SINCE[helperId];
+  if(st && st.status === 'loading') return;
+  if(st && st.status === 'ok' && !force && Date.now() - st.at < SINCE_TTL_MS){ sincePaint(helperId); return; }
+  SINCE[helperId] = {status: 'loading', open: st ? st.open : false};
+  sincePaint(helperId);
+  try {
+    const r = await fetch('/api/since?helper=' + encodeURIComponent(helperId));
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(d.error || 'Could not load what changed.');
+    SINCE[helperId] = {status: 'ok', data: d, at: Date.now(), open: SINCE[helperId].open};
+  } catch(e){
+    SINCE[helperId] = {status: 'error', error: e.message, at: Date.now()};
+  }
+  sincePaint(helperId);
+}
+
+/** Refill every slot for this helper in place (no full page redraw, so nothing else moves). */
+function sincePaint(helperId){
+  if(typeof document === 'undefined' || !document.querySelectorAll) return;
+  document.querySelectorAll('.since-slot').forEach(el => {
+    if(el.getAttribute('data-helper') === helperId) el.innerHTML = sinceHtml(helperId, el.getAttribute('data-where'));
+  });
+}
+
+function sinceToggle(helperId){
+  if(SINCE[helperId]) SINCE[helperId].open = !SINCE[helperId].open;
+  sincePaint(helperId);
+}
+
+/** The helper picker changed without a redraw: point the form's slot at the new helper. */
+function sinceRefreshSlots(){
+  if(typeof document === 'undefined' || !document.querySelectorAll) return;
+  const id = (window.VOICE_FORM || {}).helper;
+  document.querySelectorAll('.since-slot[data-where="voice"]').forEach(el => {
+    el.setAttribute('data-helper', id);
+    el.innerHTML = sinceHtml(id, 'voice');
+  });
+  if(id) sinceLoad(id);
+}

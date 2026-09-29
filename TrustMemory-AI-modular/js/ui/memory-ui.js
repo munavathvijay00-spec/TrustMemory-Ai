@@ -262,6 +262,50 @@ async function memuiFindMatches(householdId, role){
   if(typeof renderCurrentPage === 'function') renderCurrentPage();
 }
 
+/* Friction check: both people's memory, read before a placement starts. */
+const frictionMem = {}; // "<helper>|<household>" -> {status, data, error}
+
+async function memuiCheckFriction(helperId, householdId){
+  const key = helperId + '|' + householdId;
+  frictionMem[key] = {status:'loading'};
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+  try {
+    const d = await memuiFetch(`/api/friction?helper=${encodeURIComponent(helperId)}&household=${encodeURIComponent(householdId)}`);
+    frictionMem[key] = {status:'ok', data:d};
+    log('match', 'MATCHING AGENT', `Friction check for ${d.helper_name} at ${d.household_name}: ${d.points.length} point${d.points.length === 1 ? '' : 's'} (${d.source}).`);
+  } catch(e){
+    frictionMem[key] = {status:'error', error: e.message};
+  }
+  if(typeof renderCurrentPage === 'function') renderCurrentPage();
+}
+
+function renderFrictionBlock(helperId, householdId){
+  const f = frictionMem[helperId + '|' + householdId];
+  const btn = label => `<button class="btn sm" style="margin-top:10px;" onclick="memuiCheckFriction('${escapeHtml(helperId)}','${escapeHtml(householdId)}')">${label}</button>`;
+  if(!f) return btn('Check friction');
+  if(f.status === 'loading') return `<div style="font-size:11.5px; color:var(--ink-soft); margin-top:10px;">Reading both memories for likely friction…</div>`;
+  if(f.status === 'error') return `<div style="font-size:11.5px; color:var(--rust); margin-top:10px;">${escapeHtml(f.error)}</div>${btn('Try again')}`;
+  const d = f.data;
+  const side = (who, fact, when) => `<div style="flex:1; min-width:0; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:6px 8px;">
+      <div style="font-size:10px; font-weight:600; text-transform:uppercase; color:var(--ink-faint);">${who}${when ? ' · ' + escapeHtml(when) : ''}</div>
+      <div style="font-size:11.5px; line-height:1.45;">${escapeHtml(fact)}</div></div>`;
+  const points = d.points.length ? d.points.map(p => `<div style="border-top:1px solid var(--line); padding-top:8px; margin-top:8px;">
+      <div style="display:flex; gap:6px;">${side('Her side', p.helper_fact, p.helper_date)}${side('Household', p.household_fact, p.household_date)}</div>
+      <div style="font-size:11.5px; margin-top:5px;"><b>Why it clashes:</b> ${escapeHtml(p.clash)}</div>
+      ${p.fix ? `<div style="font-size:11.5px; margin-top:2px;"><b>Agree before day one:</b> ${escapeHtml(p.fix)}</div>` : ''}
+    </div>`).join('') : `<div style="font-size:11.5px; color:var(--ink-soft); margin-top:6px;">No clear friction on record.</div>`;
+  return `<div style="margin-top:12px; border:1px solid var(--line-strong); border-radius:var(--radius); padding:10px 12px; background:var(--card);">
+    <div style="display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap;">
+      <div style="font-size:12px; font-weight:600;">Friction check with ${escapeHtml(d.household_name)}</div>
+      <span class="badge ${d.source === 'hindsight' ? 'ok' : 'warn'}">${d.source === 'hindsight' ? 'From Hindsight memory' : 'From local records'}</span>
+    </div>
+    ${d.summary ? `<div style="font-size:11.5px; color:var(--ink-soft); margin-top:4px;">${escapeHtml(d.summary)}</div>` : ''}
+    ${d.note ? `<div style="font-size:11px; color:var(--ink-faint); margin-top:4px;">${escapeHtml(d.note)}</div>` : ''}
+    ${points}
+    ${d.based_on && d.based_on.length ? `<div style="font-size:10.5px; color:var(--ink-faint); margin-top:8px;">Based on ${d.based_on.length} memor${d.based_on.length === 1 ? 'y' : 'ies'} from both records.</div>` : ''}
+  </div>`;
+}
+
 function renderMatchResults(){
   if(matchMem.status === 'loading') return `<div class="card" style="font-size:12.5px; color:var(--ink-soft);">Recalling household expectations and every candidate's history from Hindsight…</div>`;
   if(matchMem.status === 'error') return `<div class="card" style="font-size:12.5px; color:var(--rust);">${escapeHtml(matchMem.error)}</div>`;
@@ -284,6 +328,7 @@ function renderMatchResults(){
       <ul class="why-list">${(top.reasons.length ? top.reasons : ['Best available balance of role fit, trust and stability.']).map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>
       <div class="hr"></div>
       <div style="font-size:11.5px; color:var(--ink-soft);"><b>Memory evidence for ${escapeHtml(top.helper.name)}</b>${evidence(top.evidence)}</div>
+      ${renderFrictionBlock(top.helper.id, d.household.id)}
     </div>
   </div>
   <div class="section">
@@ -294,6 +339,7 @@ function renderMatchResults(){
         <div class="mscore" style="font-size:20px;">${r.score}<span style="font-size:12px; color:var(--ink-soft);">/100</span></div>
         <div style="font-size:11.5px; color:var(--ink-soft); margin-top:6px;">${escapeHtml(r.reasons.join(' '))}</div>
         ${evidence(r.evidence)}
+        ${renderFrictionBlock(r.helper.id, d.household.id)}
       </div>`).join('')}
     </div>
   </div>`;

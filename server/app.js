@@ -21,6 +21,9 @@ const careRoutes = require('./care-routes');
 const outreachRoutes = require('./outreach-routes');
 const requestRoutes = require('./request-routes');
 const recordRoutes = require('./record-routes');
+const frictionRoutes = require('./friction-routes');
+const sidesRoutes = require('./sides-routes');
+const sinceRoutes = require('./since-routes');
 
 function createApp({
   port = process.env.PORT || 3000,
@@ -67,6 +70,9 @@ function createApp({
   app.use(outreachRoutes);  // today's calls, learning across helpers
   app.use(requestRoutes);   // requests and preferences from helpers and households
   app.use(recordRoutes);    // what is on record: view, correct, forget
+  app.use(frictionRoutes);  // friction check before a placement
+  app.use(sidesRoutes);     // both sides of a placement's story
+  app.use(sinceRoutes);     // what changed since the last call
 
   /* ---------------------------------------------------------------- read-only data for the dashboard */
 

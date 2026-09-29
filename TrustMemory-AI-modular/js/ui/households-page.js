@@ -194,7 +194,8 @@ function pageHouseholdDetail(id){
       </div>
     </div>
   </div>
-  ${typeof careHouseholdPanel === 'function' ? careHouseholdPanel(hh.id) : ''}`;
+  ${typeof careHouseholdPanel === 'function' ? careHouseholdPanel(hh.id) : ''}
+  ${sidesPanel(hh.id)}`;
 }
 
 function handleAddHouseholdMemory(event, householdId){
@@ -206,6 +207,7 @@ function wireHouseholds(){}
 
 function wireHouseholdDetail(id){
   if(typeof careWireHousehold === 'function') careWireHousehold(id);
+  sidesWire(id);
   const b1 = document.getElementById('runReflectBtn');
   const b2 = document.getElementById('runReflectBtn2');
   [b1, b2].forEach(b => {
@@ -216,4 +218,106 @@ function wireHouseholdDetail(id){
     const placement = S.placements.find(p => p.householdId === id && p.status === 'active');
     startCall('checkin', placement ? placement.helperId : null, id, 'Voice check-in call — event source.');
   };
+}
+
+/* ------------------------------------------------------------------ both sides of the story */
+
+const SIDES = {};   // householdId -> {helper, loading, data, error}
+
+/** Helpers placed at this household, current placement first. */
+function sidesHelpers(householdId){
+  const seen = new Set();
+  return S.placements.filter(p => p.householdId === householdId)
+    .sort((a, b) => (b.status === 'active') - (a.status === 'active') || String(b.start || '').localeCompare(String(a.start || '')))
+    .filter(p => !seen.has(p.helperId) && seen.add(p.helperId))
+    .map(p => ({id: p.helperId, name: (S.helpers.find(h => h.id === p.helperId) || {}).name || p.helperId, status: p.status}));
+}
+
+function sidesState(householdId){
+  if(!SIDES[householdId]){
+    const first = sidesHelpers(householdId)[0];
+    SIDES[householdId] = {helper: first ? first.id : '', loading: false, data: null, error: ''};
+  }
+  return SIDES[householdId];
+}
+
+function sidesBadge(status){
+  const m = {agree: ['ok', 'Agree'], differ: ['bad', 'Differ'], one_side: ['neutral', 'One side'], both: ['warn', 'Both sides']};
+  const b = m[status] || m.one_side;
+  return `<span class="badge ${b[0]}">${b[1]}</span>`;
+}
+
+function sidesSaid(x){
+  if(!x || !x.says) return '<span style="color:var(--ink-faint); font-size:12px;">Nothing on record</span>';
+  return `${x.when ? `<div style="font-family:var(--font-mono); font-size:11px; color:var(--ink-faint);">${escapeHtml(x.when)}</div>` : ''}<div style="font-size:12.5px;">${escapeHtml(x.says)}</div>`;
+}
+
+function sidesResult(householdId){
+  const st = sidesState(householdId);
+  if(st.loading) return '<div style="font-size:12.5px; color:var(--ink-soft); margin-top:12px;">Asking Hindsight what each side has said…</div>';
+  if(st.error) return `<div style="font-size:12.5px; color:var(--rust); margin-top:12px;">${escapeHtml(st.error)}</div>`;
+  const d = st.data;
+  if(!d) return '';
+  const rows = d.topics.length ? d.topics.map(t => `<tr style="border-bottom:1px solid var(--line);">
+      <td style="padding:8px 6px; vertical-align:top; font-weight:600; font-size:12.5px;">${escapeHtml(t.topic)}<div style="margin-top:4px;">${sidesBadge(t.status)}</div></td>
+      <td style="padding:8px 6px; vertical-align:top;">${sidesSaid(t.household)}</td>
+      <td style="padding:8px 6px; vertical-align:top;">${sidesSaid(t.helper)}</td></tr>`).join('')
+    : `<tr><td colspan="3" style="padding:10px 6px; font-size:12.5px; color:var(--ink-soft);">Neither side has said anything on record about this placement yet.</td></tr>`;
+  return `<div style="margin-top:14px;">
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+      <span class="badge ${d.source === 'hindsight' ? 'ok' : 'warn'}">${d.source === 'hindsight' ? 'From Hindsight memory' : 'From local records'}</span>
+      <span style="font-size:12px; color:var(--ink-soft);">${escapeHtml(d.household_name)} and ${escapeHtml(d.helper_name)}. Neither side is judged; this is what each said.</span>
+    </div>
+    ${d.note ? `<div style="font-size:12px; color:var(--ink-soft); margin-bottom:8px;">${escapeHtml(d.note)}</div>` : ''}
+    <table style="width:100%; border-collapse:collapse;">
+      <thead><tr style="border-bottom:1px solid var(--line); text-align:left; font-size:11px; text-transform:uppercase; color:var(--ink-soft);">
+        <th style="padding:6px; width:18%;">Topic</th><th style="padding:6px;">The household says</th><th style="padding:6px;">The helper says</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${d.questions.length ? `<div style="margin-top:12px;"><div style="font-size:11px; font-weight:600; text-transform:uppercase; color:var(--brass-dark); margin-bottom:4px;">Neutral questions for a mediation call</div>
+      <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.5;">${d.questions.map(q => `<li>${escapeHtml(q)}</li>`).join('')}</ul></div>` : ''}
+    ${d.based_on && d.based_on.length ? `<details style="margin-top:10px; font-size:12px;"><summary>Based on ${d.based_on.length} memor${d.based_on.length === 1 ? 'y' : 'ies'}</summary>
+      <ul style="padding-left:18px; color:var(--ink-soft);">${d.based_on.map(m => `<li>${m.when ? '<b>' + escapeHtml(m.when) + '</b> ' : ''}${escapeHtml(m.text)}</li>`).join('')}</ul></details>` : ''}
+  </div>`;
+}
+
+function sidesPanel(householdId){
+  const helpers = sidesHelpers(householdId);
+  const st = sidesState(householdId);
+  const body = helpers.length
+    ? `<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+        <select id="sidesHelper">${helpers.map(h => `<option value="${escapeHtml(h.id)}" ${h.id === st.helper ? 'selected' : ''}>${escapeHtml(h.name)}${h.status === 'active' ? ' (current)' : ''}</option>`).join('')}</select>
+        <button class="btn sm primary" id="sidesBtn" ${st.loading ? 'disabled' : ''}>Compare what each side said</button>
+      </div>
+      <div id="sidesOut">${sidesResult(householdId)}</div>`
+    : `<div style="font-size:12.5px; color:var(--ink-soft);">No helper has been placed here yet, so there is nothing to compare.</div>`;
+  return `<div class="section" style="margin-top:20px;">
+    <h2>Both sides of the story</h2>
+    <div class="card">
+      <div style="font-size:12px; color:var(--ink-soft); margin-bottom:10px;">Lines up what the household and the helper each said about this placement, topic by topic, so a mediation call starts from both accounts. It never decides who is right.</div>
+      ${body}
+    </div>
+  </div>`;
+}
+
+async function sidesLoad(householdId){
+  const st = sidesState(householdId);
+  st.loading = true; st.error = ''; st.data = null;
+  if(typeof renderCurrentPage === 'function' && route.page === 'householdDetail') renderCurrentPage();
+  try {
+    const r = await fetch('/api/sides?household=' + encodeURIComponent(householdId) + '&helper=' + encodeURIComponent(st.helper));
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok) throw new Error(d.error || 'Could not compare the two sides.');
+    st.data = d;
+  } catch(e){ st.error = e.message; }
+  st.loading = false;
+  if(typeof renderCurrentPage === 'function' && route.page === 'householdDetail') renderCurrentPage();
+}
+
+function sidesWire(householdId){
+  const st = sidesState(householdId);
+  const sel = document.getElementById('sidesHelper');
+  const btn = document.getElementById('sidesBtn');
+  if(sel) sel.onchange = () => { st.helper = sel.value; st.data = null; st.error = ''; };
+  if(btn) btn.onclick = () => sidesLoad(householdId);
 }

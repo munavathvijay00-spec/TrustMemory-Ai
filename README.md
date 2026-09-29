@@ -27,6 +27,8 @@ Most agents with memory use it to answer the next question better. TrustMemory u
 3. **Memory that looks ahead.** "Last Dussehra she came back 9 days late" puts her on the call list weeks before this year's festival. (`server/outreach.js`)
 4. **Memory that learns across the agency.** Every kept or broken promise is stored with the coaching approach that preceded it, so a new helper with no history starts from what worked for others with the same kind of problem. (`server/commitments.js`)
 5. **Memory that can be seen, corrected and forgotten.** A helper sees what the agency remembers from her own words and can correct any fact; her correction is retained to Hindsight and takes priority on the next call. Temporary circumstances (unwell, travelling, on leave) older than 30 days are marked as possibly outdated, so the agent asks instead of assuming. A coordinator can have every memory about a helper deleted on request, confirmed by typing her name. (`server/record.js`)
+6. **Memory that joins two people's histories.** Before a placement, *Check friction* on the Matching page reads the helper's constraints and the household's expectations and names the likely clashes before day one, each with the dated facts on both sides and one fix to agree up front. When a placement is already struggling, *Both sides of the story* on the household page lines up what each side said, topic by topic, with neutral questions for a mediation call. Neither decides who is right. (`server/friction.js`, `server/sides.js`)
+7. **Memory that says what's new.** Before ringing a helper, the coordinator sees what changed since the last call: promises, requests, corrections, household feedback and new memories, newest first. (`server/since.js`)
 
 The same call, with and without memory (the console's *Compare without memory* button runs this live):
 
@@ -189,6 +191,9 @@ The coordinator console and the helper phone screen share one server-side sessio
 | GET | `/api/memory/commitments?helper=` | Commitment ledger: promises, kept rate, and which coaching approach works with the helper |
 | GET | `/api/activity` | Last 50 agent activity rows |
 | POST | `/api/voice/session` | Start a call: recall memory, generate the opening line. Body `{helper_id, scenario, late_count, use_memory}` |
+| GET | `/api/friction?helper=&household=` | Likely friction between one helper and one household, from both memories |
+| GET | `/api/sides?household=&helper=` | Both sides of a placement's story, lined up by topic |
+| GET | `/api/since?helper=` | What changed since the helper's last call |
 | GET | `/api/me/record` · POST `/api/me/record/correction` | The helper's own record (from her words only) and her corrections |
 | POST | `/api/record/:helperId/forget` | Coordinator deletes every memory about a helper; body `{confirm_name}` |
 | GET | `/api/voice/tts/status` · POST `/api/voice/tts` | Azure neural speech for the phone screen (helper: own call only) |

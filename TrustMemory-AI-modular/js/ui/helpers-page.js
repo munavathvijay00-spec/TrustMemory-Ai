@@ -190,6 +190,7 @@ function pageHelperDetail(id){
       </div>
     </div>
   </div>
+  ${typeof sinceSlot === 'function' ? sinceSlot(h.id, 'card') : ''}
   <div class="section">
     <h2>Hindsight memory for ${escapeHtml(h.name)}</h2>
     <div class="grid g2">
