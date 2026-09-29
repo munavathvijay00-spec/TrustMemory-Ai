@@ -141,7 +141,7 @@ async function handleCreateHelper(event){
 function pageHelperDetail(id){
   recalcAll();
   const h = S.helpers.find(x => x.id === id);
-  if(!h) return emptyState('Helper not found','');
+  if(!h) return `<div class="card">${emptyState('Helper not found', 'The link may be wrong, or the agency was asked to forget this helper.')}<div style="text-align:center; margin-top:10px;"><button class="btn sm" onclick="nav('people')">Back to People</button></div></div>`;
   const sc = SCORES[h.id] || {trust: 68, churn: 18};
   const evs = helperEvents(id).slice().sort((a,b) => new Date(a.date) - new Date(b.date));
   // Explain the score with the Decision Agent's own reasons from its latest Opinion entry.
@@ -334,6 +334,14 @@ function wireForgetPanel(id){
       forgetMsg[id] = {ok: true, text: `Forgotten: ${d.documents} memory documents, ${local} local records${d.standing_profile ? ', and her standing profile' : ''}.`};
       const h = S.helpers.find(x => x.id === id);
       if(h){ h.name = 'Forgotten helper'; h.location = ''; }
+      if(typeof MEMUI !== 'undefined'){
+        Object.keys(MEMUI.cache).forEach(k => { if(k.split(':').includes(id)) delete MEMUI.cache[k]; });
+        if(MEMUI.hist) MEMUI.hist = {};
+      }
+      delete helperCorrections[id];
+      if(typeof careHelperSafety !== 'undefined') delete careHelperSafety[id];
+      if(typeof SINCE !== 'undefined') delete SINCE[id];
+      if(typeof MEM !== 'undefined' && MEM) delete MEM[id];
       if(typeof log === 'function') log('mem', 'MEMORY AGENT', 'Forgot all memory about a helper at the coordinator\'s request.');
     } catch(err){ forgetMsg[id] = {ok: false, text: err.message}; }
     renderCurrentPage();
@@ -352,7 +360,7 @@ function wireHelperDetail(id){
   wireForgetPanel(id);
   const coach = document.getElementById('coachBtn');
   if(coach) coach.onclick = () => {
-    window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1, scenario: 'coaching_call'}, {helper: id});
+    window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1}, {helper: id, scenario: 'coaching_call'});
     nav('voice');
     setTimeout(() => { const sel = document.getElementById('vHelper'); if(sel) sel.value = id; if(typeof startLiveVoiceSession === 'function') startLiveVoiceSession(); }, 250);
   };

@@ -14,6 +14,7 @@
  * Also listens for finished calls (voice/hooks) to label the new promise with its problem type,
  * and retains a dated agency-level fact to Hindsight when what works for a problem type changes.
  */
+const { istDate } = require('./dates');
 const db = require('./db');
 const commitments = require('./commitments');
 const hindsight = require('./hindsight');
@@ -66,7 +67,7 @@ const MEMORY_TIMEOUT_MS = 6000;
 
 const WEIGHTS = { escalation: 45, promise_overdue: 40, promise_today: 35, promise_soon: 20, festival_late: 50, festival_no_cover: 30, festival_memory: 25, advance_requests: 35, no_recent_call: 10 };
 
-function day(d) { return new Date(d).toISOString().slice(0, 10); }
+function day(d) { return istDate(new Date(d)); }
 function daysBetween(a, b) { return Math.round((new Date(day(b)) - new Date(day(a))) / 86400000); }
 function prettyDate(iso) {
   const d = new Date(iso + (iso.length === 10 ? 'T00:00:00Z' : ''));
@@ -126,7 +127,7 @@ async function memoryFacts(helperId, { now = Date.now() } = {}) {
       { tags: ['helper:' + helperId], tagsMatch: 'any', budget: 'low', maxTokens: 1200, limit: 8 }), MEMORY_TIMEOUT_MS);
     const facts = results
       .filter(r => FESTIVAL_WORDS.test(r.text) || ADVANCE_WORDS.test(r.text))
-      .map(r => ({ id: r.id, text: String(r.text).split(' | ')[0], when: r.mentionedAt ? day(r.mentionedAt) : '', festival: FESTIVAL_WORDS.test(r.text), advance: ADVANCE_WORDS.test(r.text) }));
+      .map(r => ({ id: r.id, doc: r.documentId || '', text: String(r.text).split(' | ')[0], when: r.mentionedAt ? day(r.mentionedAt) : '', festival: FESTIVAL_WORDS.test(r.text), advance: ADVANCE_WORDS.test(r.text) }));
     value = { facts, source: 'hindsight' };
     memoryCache.set(helperId, { at: now, ttl: MEMORY_TTL_MS, value });
   } catch (err) {
@@ -223,7 +224,8 @@ function reasonsFor(helper, { now, due, escalations, festivals, memory }) {
   const since = day(new Date(now.getTime() - ADVANCE_WINDOW_DAYS * 86400000));
   const adv = db.prepare("SELECT * FROM outreach_signals WHERE helper_id = ? AND kind = 'advance_request' AND occurred_on >= ? ORDER BY occurred_on DESC").all(helper.id, since);
   // Memory facts often come back twice (fact and observation); count one per day.
-  const advMem = memory.facts.filter(m => m.advance && m.when && m.when >= since && !adv.some(a => Math.abs(daysBetween(a.occurred_on, m.when)) <= 1))
+  // Seeded advance memories mirror the local rows (re-dated on each start), so they are never counted twice.
+  const advMem = memory.facts.filter(m => m.advance && m.when && m.when >= since && !String(m.doc || '').startsWith('seed:outreach:') && !adv.some(a => Math.abs(daysBetween(a.occurred_on, m.when)) <= 1))
     .filter((m, i, all) => all.findIndex(x => x.when === m.when) === i);
   const advCount = adv.length + advMem.length;
   if (advCount >= 2) {

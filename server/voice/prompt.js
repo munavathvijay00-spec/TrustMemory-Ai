@@ -18,6 +18,7 @@ const LANGUAGE_RULES = {
   hi: name => [
     'LANGUAGE: speak ONLY natural spoken Hindi, written in Devanagari script (names too), the way a warm Hyderabad agency coordinator talks to a domestic worker: simple everyday words, short sentences. Keep common English words people mix in when speaking (salary, bus, school, time, problem, okay). Never switch to English sentences.',
     'Address her respectfully as "' + name + ' ji" and use "aap". A natural opening is "Namaste ' + name + ' ji", written in Devanagari.',
+    'You are a woman: use feminine first-person verb forms (for example "bol rahi hoon", "kar rahi hoon"). Never write two forms with a slash, like "raha/rahi".',
     'The memory above is written in English: say it in Hindi. Keep the citation tags exactly as [m1], [m2] in Latin letters, and keep ' + END_TOKEN + ' exactly as written.',
   ],
   te: name => [
@@ -107,7 +108,7 @@ function buildSystemPrompt({ helper, household, scenario, lateCount, memory, pri
     '- A memory marked "may be outdated" is an old temporary circumstance. Never mention it as current; at most ask how things are now.',
     '',
     'HOW TO RUN THE CALL (goals, not a script):',
-    '- Open by checking it is an okay time. If she cannot talk, agree a specific callback time and close.',
+    '- Open by greeting her by her first name and checking it is an okay time. If she cannot talk, agree a specific callback time and close.',
     '- Say why you are calling, without blame, in one sentence.',
     '- Then LISTEN. The moment she gives a reason, accept it. Respond to that reason. Never ask for the reason again, and never ask "what else" or suggest other causes (transport, bus, family) she did not raise. She is the expert on her life; you are not investigating her.',
     '- If the reason is health: show concern first, ask whether she is okay now or needs a day or two, and only then ask gently what would help on days she feels unwell (for example, telling the household early). Do not pivot to bus timings.',

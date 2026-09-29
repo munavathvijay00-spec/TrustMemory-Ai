@@ -8,6 +8,7 @@
  * Outcomes are retained to Hindsight too (see voice-agent.js), so the memory bank holds
  * what worked, not only what was said.
  */
+const { istDate } = require('./dates');
 const db = require('./db');
 
 const APPROACHES = {
@@ -111,8 +112,8 @@ function escalateIfNeeded(commitmentId) {
 
 /** Open promises due for a check-in: overdue, today, or within the next few days. */
 function due({ withinDays = 3 } = {}) {
-  const limit = new Date(Date.now() + withinDays * 86400000).toISOString().slice(0, 10);
-  const today = new Date().toISOString().slice(0, 10);
+  const limit = istDate(new Date(Date.now() + withinDays * 86400000));
+  const today = istDate();
   return db.prepare(`SELECT c.*, h.name AS helper_name FROM commitments c JOIN helpers h ON h.id = c.helper_id
                      WHERE c.status = 'open' AND c.due_date IS NOT NULL AND c.due_date <= ? ORDER BY c.due_date ASC`).all(limit)
     .map(c => Object.assign(c, { overdue: c.due_date < today, due_today: c.due_date === today }));

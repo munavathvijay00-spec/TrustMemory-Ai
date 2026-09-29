@@ -234,10 +234,12 @@
           if(s.call_state === 'ended' || s.result || s.status === 'cancelled') endLocal('The agency ended the call.');
         } catch(e){ endLocal('The call was closed.'); }
       } else if(state.phase === 'ringing' && state.sessionId){
+        const sid = state.sessionId;
         try {
-          const s = await api('/api/voice/session/' + encodeURIComponent(state.sessionId));
+          const s = await api('/api/voice/session/' + encodeURIComponent(sid));
+          if(state.phase !== 'ringing' || state.sessionId !== sid) return;   // she answered meanwhile
           if(s.call_state !== 'ringing'){ stopRing(); show('idle'); hint('Missed call.'); }
-        } catch(e){ stopRing(); show('idle'); }
+        } catch(e){ if(state.phase === 'ringing' && state.sessionId === sid){ stopRing(); show('idle'); } }
       }
     }, 1500);
   }
@@ -269,8 +271,10 @@
     state.lines.push({me:true, text}); renderLines();
     $('hpInterim').textContent = '';
     hint('…');
+    const sid = state.sessionId;
     try {
-      const d = await api('/api/voice/turn', {session_id: state.sessionId, text});
+      const d = await api('/api/voice/turn', {session_id: sid, text});
+      if(state.sessionId !== sid || state.phase !== 'connected'){ state.busy = false; return; }
       hint('');
       state.lines.push({me:false, text: d.reply}); renderLines();
       state.busy = false;

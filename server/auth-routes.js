@@ -11,6 +11,7 @@
  *
  * TRUSTMEMORY_AUTH=off (the tests) skips the checks and treats every request as the coordinator.
  */
+const { istDate } = require('./dates');
 const express = require('express');
 const auth = require('./auth');
 const db = require('./db');
@@ -83,7 +84,8 @@ router.post('/api/auth/signup', (req, res) => {
   try {
     const { account, person } = auth.signup(req.body || {});
     // Sign the new account in, so the console can show "waiting for approval" straight away.
-    const s = auth.login(account.email, (req.body || {}).password, req.ip);
+    // Not through login(): a busy shared IP's failed sign-ins must not turn a created account into a 429.
+    const s = auth.createSession(account.id);
     res.setHeader('Set-Cookie', auth.sessionCookie(req, s.token, s.expires));
     res.status(201).json({ account, person });   // null until a coordinator approves the account
   } catch (err) { fail(res, err); }
@@ -127,10 +129,15 @@ router.get('/api/auth/me', (req, res) => {
 });
 
 router.get('/api/auth/pending', coordinatorOnly, (req, res) => {
+  // A pending account has no roster row yet: what they signed up with is in its profile.
   res.json(auth.pending().map(a => {
-    const table = a.role === 'helper' ? 'helpers' : 'households';
-    const p = a.person_id ? db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(a.person_id) : null;
-    return Object.assign(a, { location: p ? p.location : null, detail: p ? (a.role === 'helper' ? `${p.experience_years} yrs, ${p.role.replace('_', ' ')}` : `needs ${String(p.need).replace('_', ' ')}`) : null });
+    const p = a.profile || {};
+    const skills = Array.isArray(p.skills) ? p.skills.map(x => String(x).replace('_', ' ')).join(', ') : '';
+    const detail = a.role === 'helper'
+      ? [p.experience_years != null ? `${p.experience_years} yrs` : '', skills].filter(Boolean).join(', ')
+      : (p.need || p.requirement ? `needs ${String(p.need || p.requirement).replace('_', ' ')}` : '');
+    delete a.profile;
+    return Object.assign(a, { location: p.location || null, detail: detail || null });
   }));
 });
 
@@ -243,7 +250,7 @@ router.post('/api/me/feedback', (req, res) => {
   const hName = helperName(helperId);
 
   const now = new Date();
-  const date = now.toISOString().slice(0, 10);
+  const date = istDate(now);
   const id = 'fb_' + now.getTime().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
   db.prepare('INSERT INTO household_feedback (id, household_id, helper_id, rating, text, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(id, hh.id, helperId, r, t, nowSql());
   const content = `On ${date}, the ${hh.name} rated ${hName || 'the agency'} ${r} out of 5 and said: "${t}"`;

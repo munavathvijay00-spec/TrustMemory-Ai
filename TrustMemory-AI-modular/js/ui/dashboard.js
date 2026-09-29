@@ -28,7 +28,7 @@ function dashAction(a){
 function dashGreeting(){
   const h = new Date().getHours();
   const name = typeof CURRENT_USER !== 'undefined' && CURRENT_USER && CURRENT_USER.name ? String(CURRENT_USER.name) : '';
-  const first = name && !/agency|coordinator/i.test(name) ? ', ' + name.split(' ')[0] : '';
+  const first = name && !/agency|coordinator/i.test(name) ? ', ' + escapeHtml(name.split(' ')[0]) : '';
   return (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + first;
 }
 

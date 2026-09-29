@@ -10,7 +10,7 @@ function routeFromHash(){
   if(typeof location === 'undefined') return null;
   const m = String(location.hash || '').match(/^#\/([A-Za-z]+)(?:\/([^/]+))?$/);
   if(!m || !ROUTABLE.includes(m[1])) return null;
-  return {page: m[1], param: m[2] ? decodeURIComponent(m[2]) : null};
+  try { return {page: m[1], param: m[2] ? decodeURIComponent(m[2]) : null}; } catch(e){ return null; }
 }
 
 function writeHash(page, param){
@@ -49,11 +49,22 @@ let RENDER_HOLD_TIMER = null;
  * position; a new page starts at the top (nav does that). The old height is held briefly so a
  * shorter loading state cannot pull the page up.
  */
+// Fields of a form that was just submitted are not restored after the re-render (their text was sent).
+const SUBMITTED_FIELDS = new Set();
+if(typeof document !== 'undefined' && document.addEventListener){
+  document.addEventListener('submit', e => { const f = e.target; if(f && f.querySelectorAll) f.querySelectorAll('input[id], textarea[id]').forEach(el => SUBMITTED_FIELDS.add(el.id)); }, true);
+  document.addEventListener('input', e => { if(e.target && e.target.id) SUBMITTED_FIELDS.delete(e.target.id); }, true);
+}
+
 function renderCurrentPage(){
   const c = document.getElementById('content');
   const key = (typeof route !== 'undefined' && route) ? route.page + '/' + (route.param || '') : '';
   const same = c && key === LAST_RENDER_KEY && typeof window.scrollY === 'number';
   const y = same ? window.scrollY : 0;
+  // Data arriving must not wipe what the coordinator is typing: keep the focused field (unless it was just submitted).
+  const a = same && typeof document !== 'undefined' ? document.activeElement : null;
+  const keep = a && a.id && /^(INPUT|TEXTAREA)$/.test(a.tagName) && a.type !== 'password' && c.contains(a) && !SUBMITTED_FIELDS.has(a.id)
+    ? {id: a.id, value: a.value, start: a.selectionStart, end: a.selectionEnd} : null;
   if(same && c.style){
     c.style.minHeight = c.offsetHeight + 'px';
     if(RENDER_HOLD_TIMER) clearTimeout(RENDER_HOLD_TIMER);
@@ -61,6 +72,14 @@ function renderCurrentPage(){
   }
   renderCurrentPageInner();
   LAST_RENDER_KEY = key;
+  if(keep){
+    const el = document.getElementById(keep.id);
+    if(el && /^(INPUT|TEXTAREA)$/.test(el.tagName)){
+      if(!el.value && keep.value) el.value = keep.value;
+      el.focus();
+      try { el.setSelectionRange(keep.start, keep.end); } catch(e){ /* not a text field */ }
+    }
+  }
   if(same && y > 0 && typeof window.scrollTo === 'function') window.scrollTo(0, y);
 }
 

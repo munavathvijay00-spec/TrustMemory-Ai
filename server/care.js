@@ -12,6 +12,7 @@
  * the household's memory into a short spoken briefing (routine, health, preferences, what went
  * wrong before, first-week tips) without blame and without anything private about past helpers.
  */
+const { istDate } = require('./dates');
 const db = require('./db');
 const hindsight = require('./hindsight');
 const groq = require('./groq');
@@ -66,7 +67,7 @@ db.exec(`
 `);
 
 function nowSql() { return new Date().toISOString().replace('T', ' ').substring(0, 19); }
-function dayOf(date) { return new Date(date).toISOString().slice(0, 10); }
+function dayOf(date) { return istDate(new Date(date)); }
 function daysAgoDate(n) { return dayOf(Date.now() - n * 86400000); }
 /** Same arithmetic as the Hindsight seed (local date, 10:00), so local rows and memory agree on the day. */
 function seedDay(n) { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(10, 0, 0, 0); return d.toISOString().slice(0, 10); }
@@ -215,7 +216,8 @@ function evaluate(helperId, { latestCallId, householdId = null } = {}) {
       content: `On ${dayOf(Date.now())}, the agency raised a private safety check for ${helper.name}. ${hit.reason} Her words: ${evidence.map(s => `(${s.said_at}) "${s.evidence}"`).join(' ')} This is for the coordinator to check with her; it is not a finding about the household.`,
       context: 'Coordinator-only safety note written by the agency after a helper call.',
       documentId: 'safety:' + id,
-      tags: ['helper:' + helperId, ...(hh ? ['household:' + hh] : []), 'source:safety'],
+      // Her tag only: a household-scoped recall or reflect (handover briefs, household profile) must never see it.
+      tags: ['helper:' + helperId, 'source:safety'],
       metadata: { helper_id: helperId, kind: 'safety_flag' },
       helperId,
     });
@@ -438,7 +440,8 @@ async function handover(householdId, { helperId, lang = 'en' } = {}) {
       );
       if (out.structured) {
         sections = cleanSections(out.structured, helper.id, householdId);
-        cited = out.basedOn.memories.map(m => ({ text: String(m.text).split(' | ')[0], when: (m.mentionedAt || '').slice(0, 10) }))
+        cited = out.basedOn.memories.filter(m => !(m.tags || []).includes('source:safety') && !String(m.documentId || '').startsWith('safety:'))
+          .map(m => ({ text: String(m.text).split(' | ')[0], when: (m.mentionedAt || '').slice(0, 10) }))
           .concat((out.basedOn.mentalModels || []).map(m => ({ text: 'Standing profile: ' + (m.name || m.id || 'household profile'), when: String(m.last_refreshed_at || m.updated_at || '').slice(0, 10) })));
         if (!cited.length && mentalModelUsed) cited.push({ text: 'Standing profile: ' + (model.name || 'household-' + householdId), when: String(model.last_refreshed_at || model.updated_at || '').slice(0, 10) });
         cited = cited.slice(0, 12);
@@ -469,7 +472,9 @@ async function handover(householdId, { helperId, lang = 'en' } = {}) {
   };
 }
 
+function clearCache() { briefCache.clear(); }
+
 module.exports = {
-  KIND_LABELS, WINDOW_DAYS, ValidationError, NotFoundError,
+  clearCache, KIND_LABELS, WINDOW_DAYS, ValidationError, NotFoundError,
   recordSignals, assess, evaluate, onCall, openFlags, forHelper, review, getFlag, handover, recordHandover, scrubNames,
 };

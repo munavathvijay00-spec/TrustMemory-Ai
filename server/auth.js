@@ -152,11 +152,18 @@ function login(email, password, ip = '') {
     throw new AuthError('Email or password is incorrect.', 401, 'BAD_LOGIN');
   }
   for (const k of keys) failures.delete(k);
+  return createSession(account.id);
+}
+
+/** A new session for an account. Expired sessions and stale failure counts are pruned here. */
+function createSession(accountId) {
   const token = crypto.randomBytes(32).toString('hex');
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
-  db.prepare('INSERT INTO sessions (token, account_id, expires_at) VALUES (?, ?, ?)').run(token, account.id, expires);
-  db.prepare('UPDATE accounts SET last_login_at = ? WHERE id = ?').run(nowSql(), account.id);
-  return { token, expires, account: publicAccount(getAccount(account.id)) };
+  db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(new Date().toISOString());
+  for (const k of [...failures.keys()]) recentFailures(k);   // drops keys whose failures have aged out
+  db.prepare('INSERT INTO sessions (token, account_id, expires_at) VALUES (?, ?, ?)').run(token, accountId, expires);
+  db.prepare('UPDATE accounts SET last_login_at = ? WHERE id = ?').run(nowSql(), accountId);
+  return { token, expires, account: publicAccount(getAccount(accountId)) };
 }
 
 function accountForToken(token) {
@@ -175,7 +182,11 @@ function logout(token) {
 }
 
 function pending() {
-  return db.prepare("SELECT * FROM accounts WHERE status = 'pending' ORDER BY created_at").all().map(publicAccount);
+  return db.prepare("SELECT * FROM accounts WHERE status = 'pending' ORDER BY created_at").all().map(a => {
+    let profile = {};
+    try { profile = JSON.parse(a.profile_json || '{}') || {}; } catch { profile = {}; }
+    return Object.assign(publicAccount(a), { profile });
+  });
 }
 
 function approve(accountId) {
@@ -281,6 +292,6 @@ function sessionCookie(req, token, expires) {
 
 module.exports = {
   ROLES, COOKIE, AuthError, DEMO_ACCOUNTS,
-  checkEmail, checkPassword, signup, createCoordinator, login, logout, accountForToken, publicAccount,
+  checkEmail, checkPassword, signup, createCoordinator, login, createSession, logout, accountForToken, publicAccount,
   pending, approve, seedDemoAccounts, demoRoles, demoLogin, readCookie, sessionCookie, hashPassword,
 };

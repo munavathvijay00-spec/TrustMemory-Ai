@@ -39,10 +39,10 @@ function upsertHelperFromServer(r){
   }
   h.name = r.name;
   h.exp = r.experience_years;
-  if(r.location) h.location = r.location;
+  h.location = r.location || '';
   if(skills.length) h.skills = skills;
   else if(!h.skills.length && r.role) h.skills = [r.role];
-  if(r.availability) h.availability = r.availability;
+  h.availability = r.availability || '';
   if(r.color) h.color = r.color;
   return h;
 }
@@ -231,7 +231,7 @@ function initApp(){
   });
 
   // Who is signed in decides everything else: the sign-in screen, "waiting for approval",
-  // or the console for that role. If the server cannot be reached, show the coordinator view.
+  // or the console for that role. If the server cannot be reached, show the reconnecting screen (the offline console only with TM_OFFLINE_CONSOLE).
   const content = document.getElementById('content');
   if(content) content.innerHTML = '<div class="empty"><p>Loading…</p></div>';
   authBoot().then(state => {

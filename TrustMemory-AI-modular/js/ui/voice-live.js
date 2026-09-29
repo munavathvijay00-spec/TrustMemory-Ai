@@ -388,6 +388,7 @@ async function lvFollowRetain(s){
         if(d.result.trace) s.result.trace = d.result.trace;
         log('mem', 'MEMORY AGENT', ret.status === 'ok' ? `Retained the call to Hindsight bank ${ret.bank}.` : ret.detail);
         lvRender();
+        if(ret.status === 'ok' && s.useMemory !== false && typeof lvSuggestRule === 'function') lvSuggestRule();
         return;
       }
     } catch(e){ return; }
@@ -861,7 +862,7 @@ function renderLiveVoiceConsole(){
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           ${s.sessionId && memoryOn ? `<button class="btn sm" onclick="lvRunComparison()" ${window.LIVE_VOICE_COMPARE && window.LIVE_VOICE_COMPARE.status === 'running' ? 'disabled' : ''}>⇄ Compare without memory</button>` : ''}
           ${s.sessionId && !s.result ? `<button class="btn sm primary" onclick="endLiveVoiceSession()" ${s.status === 'completing' ? 'disabled' : ''} style="background:#1C653C; border-color:#12592D; font-weight:700;">💾 End call & save to memory</button>` : ''}
-          <button class="btn sm" onclick="cancelLiveVoiceSession()">${s.result ? '✕ Close' : '✕ Cancel'}</button>
+          ${s.status === 'completing' ? '' : `<button class="btn sm" onclick="cancelLiveVoiceSession()">${s.result ? '✕ Close' : '✕ Cancel'}</button>`}
         </div>
       </div>
 

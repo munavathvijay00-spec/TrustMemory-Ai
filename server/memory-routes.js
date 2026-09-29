@@ -14,6 +14,7 @@
  *   POST /api/memory/feedback          {call_id, helper_id, verdict, note}  coordinator correction -> retained
  *   GET  /api/memory/match             ?household=&role=        memory-backed candidate ranking
  */
+const { istDate } = require('./dates');
 const express = require('express');
 const db = require('./db');
 const groq = require('./groq');
@@ -275,19 +276,21 @@ router.post('/api/memory/note', async (req, res) => {
   db.prepare("INSERT INTO memories (id, helper_id, household_id, network, content, created_at) VALUES (?, ?, ?, 'experience', ?, ?)")
     .run('mem_note_' + Date.now(), kind === 'helper' ? id : null, kind === 'household' ? id : null, 'Coordinator note: ' + clean, nowSqlStr);
   if (!hindsight.isConfigured()) return res.json({ ok: true, retain: { status: 'skipped' } });
+  // One item, one document id: a queued retry after a timeout upserts the same document instead of adding a second.
+  const noteItem = {
+    content: clean,
+    context: 'Note written by the agency coordinator about ' + (kind === 'helper' ? 'helper ' : 'the household ') + name + ' on ' + istDate(new Date(nowIso)) + '.',
+    documentId: 'note:' + kind + ':' + id + ':' + Date.now(),
+    timestamp: nowIso,
+    metadata: { [kind + '_id']: id, kind: 'coordinator-note' },
+    tags: [kind + ':' + id, 'source:coordinator-note'],
+  };
   try {
-    await hindsight.retain([{
-      content: clean,
-      context: 'Note written by the agency coordinator about ' + (kind === 'helper' ? 'helper ' : 'the household ') + name + ' on ' + nowIso.slice(0, 10) + '.',
-      documentId: 'note:' + kind + ':' + id + ':' + Date.now(),
-      timestamp: nowIso,
-      metadata: { [kind + '_id']: id, kind: 'coordinator-note' },
-      tags: [kind + ':' + id, 'source:coordinator-note'],
-    }]);
+    await hindsight.retain([noteItem]);
     db.prepare("INSERT INTO activity (id, agent, text, created_at) VALUES (?, 'mem', ?, ?)").run('act_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7), 'MEMORY AGENT — Coordinator note about ' + name + ' retained to Hindsight.', nowSqlStr);
     res.json({ ok: true, retain: { status: 'ok', bank: hindsight.BANK_ID } });
   } catch (err) {
-    const jobId = retainQueue.enqueue([{ content: clean, context: 'Coordinator note about ' + name + '.', documentId: 'note:' + kind + ':' + id + ':' + Date.now(), timestamp: nowIso, tags: [kind + ':' + id, 'source:coordinator-note'] }], { helperId: kind === 'helper' ? id : null, callId: 'note', error: err.message });
+    const jobId = retainQueue.enqueue([noteItem], { helperId: kind === 'helper' ? id : null, callId: 'note', error: err.message });
     res.json({ ok: true, retain: { status: 'queued', job: jobId } });
   }
 });
@@ -297,7 +300,7 @@ router.post('/api/memory/note', async (req, res) => {
 router.get('/api/memory/who-to-call', async (req, res) => {
   if (!needHindsight(res)) return;
   const helpers = db.prepare('SELECT id, name FROM helpers').all();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = istDate();
   const schema = {
     type: 'object',
     properties: {

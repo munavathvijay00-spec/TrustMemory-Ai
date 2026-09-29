@@ -78,6 +78,12 @@ async function main() {
   };
   console.log(`Local database: ${local.calls} calls, ${local.memories} call-derived memories, ${local.activity} activity rows, ${local.commitments} commitments from calls.`);
   if (APPLY) {
+    // Retired seed facts stay invalidated in Hindsight unless they are restored before the corrections go.
+    try {
+      for (const r of db.prepare("SELECT memory_id FROM record_corrections WHERE status = 'retired' AND memory_id IS NOT NULL").all()) {
+        try { await hindsight.memories.restore(r.memory_id); } catch (e) { console.log('Could not restore ' + r.memory_id + ': ' + e.message); }
+      }
+    } catch (e) { /* table created on first server start */ }
     db.exec('DELETE FROM calls');
     db.prepare(`DELETE FROM memories WHERE id NOT IN (${placeholders})`).run(...SEED_MEMORY_IDS);
     db.exec('DELETE FROM activity');
@@ -91,6 +97,8 @@ async function main() {
       'DELETE FROM agency_learning_state',
       'DELETE FROM household_feedback',
       'DELETE FROM voice_sessions',
+      'DELETE FROM requests',
+      'DELETE FROM record_corrections',
       "DELETE FROM sessions WHERE account_id IN (SELECT id FROM accounts WHERE email NOT LIKE '%@trustmemory.demo')",
       "DELETE FROM accounts WHERE email NOT LIKE '%@trustmemory.demo'",
       'DELETE FROM helpers WHERE created_at IS NOT NULL',

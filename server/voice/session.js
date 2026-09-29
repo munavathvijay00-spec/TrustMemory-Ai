@@ -84,7 +84,7 @@ async function startSession({ helperId = 'anita', scenario = 'coaching_call', la
   const g = splitCitations(rawGreeting);
   const greeting = g.text;
   g.cited = knownTags(g.cited, memory.facts);
-  if (!g.cited.length && useMemory && memory.facts.length && mayUseMemory(greeting, memory.facts, helper.name)) {
+  if (!g.cited.length && useMemory && memory.facts.length && ((language && language !== 'en') || mayUseMemory(greeting, memory.facts, helper.name))) {
     const tAttr = Date.now();
     g.cited = await attributeCitations(greeting, memory.facts);
     record(trace, 'attribution', tAttr, true, g.cited.length + ' cited');
@@ -137,6 +137,14 @@ async function turn(sessionId, userText) {
   if (s.status === 'wrapping_up') s.status = 'active';
   const text = String(userText || '').trim();
   if (!text) throw Object.assign(new Error('Empty message.'), { status: 400 });
+  const herLine = { who: firstName(s.helper.name), text, t: new Date().toISOString(), recalled: [] };
+  s.transcript.push(herLine);
+  // The call can be hung up, saved or cancelled while this turn waits on Hindsight or Groq.
+  const stillLive = () => {
+    if (!SESSIONS.has(s.id) || s.completing || s.status === 'completed' || s.status === 'cancelled' || s.callState === 'ended' || s.callState === 'declined') {
+      throw Object.assign(new Error('This call has ended.'), { status: 409 });
+    }
+  };
 
   // Recall-before-reply: her latest sentence is the query, so the agent reacts to what she
   // just said with what the agency already knows about it (people, arrangements, commitments).
@@ -170,6 +178,7 @@ async function turn(sessionId, userText) {
     record(s.trace, 'turn_recall', tRecall, true, 'skipped', steps);
   }
   recalledNow = recalledNow.filter((f, i, a) => a.indexOf(f) === i);
+  stillLive();
   s.messages.push({ role: 'user', content: text });
   if (recalledNow.length) {
     s.messages.push({
@@ -179,7 +188,7 @@ async function turn(sessionId, userText) {
         '\nIf she referred to a person or arrangement you have on record, say that you remember it.',
     });
   }
-  s.transcript.push({ who: firstName(s.helper.name), text, t: new Date().toISOString(), recalled: recalledNow.map(f => f.tag) });
+  herLine.recalled = recalledNow.map(f => f.tag);
 
   // Keep the first system prompt, drop per-turn memory inserts older than the last two turns, cap history.
   const body = s.messages.slice(1);
@@ -196,16 +205,17 @@ async function turn(sessionId, userText) {
     throw err;
   }
   record(s.trace, 'llm_reply', tReply, true, undefined, steps);
+  stillLive();
   let ending = reply.includes(END_TOKEN);
   reply = reply.replace(END_TOKEN, '').trim();
-  const rawReply = reply;
   // Guard: the agent must stop after its first question and wait for the helper.
   // If the model kept going (role-playing the helper's answer), cut it at that question
-  // and do not treat the call as ended.
+  // and do not treat the call as ended. Citation tags right after the question mark are kept.
   const q = reply.indexOf('?');
   if (q !== -1 && q < reply.length - 1) {
-    const tail = reply.slice(q + 1).trim();
-    if (tail.length > 0) { reply = reply.slice(0, q + 1).trim(); ending = false; }
+    const after = reply.slice(q + 1);
+    const tags = (after.match(/^(\s*\[m\d+\])+/) || [''])[0];
+    if (after.slice(tags.length).trim()) { reply = reply.slice(0, q + 1 + tags.length).trim(); ending = false; }
   }
   // Cut a reply where the model starts writing the helper's side ("\nRadha: ...").
   const nameRe = new RegExp('\\n\\s*' + firstName(s.helper.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*:', 'i');
@@ -216,14 +226,16 @@ async function turn(sessionId, userText) {
 
   const c = splitCitations(reply);
   c.cited = knownTags(c.cited, s.memory.facts);
-  if (!c.cited.length && s.useMemory !== false && s.memory.facts.length && mayUseMemory(c.text, s.memory.facts, s.helper.name)) {
+  if (!c.cited.length && s.useMemory !== false && s.memory.facts.length && (s.language !== 'en' || mayUseMemory(c.text, s.memory.facts, s.helper.name))) {
     const tAttr = Date.now();
     c.cited = await attributeCitations(c.text, s.memory.facts);
     record(s.trace, 'attribution', tAttr, true, c.cited.length + ' cited', steps);
+    stillLive();
   }
-  s.messages.push({ role: 'assistant', content: rawReply + (ending ? ' ' + END_TOKEN : '') });
+  // History holds what was actually said (after the cuts above), so a role-played answer is not reinforced.
+  s.messages.push({ role: 'assistant', content: reply + (ending ? ' ' + END_TOKEN : '') });
   s.transcript.push({ who: 'Agent', text: c.text, cited: c.cited, t: new Date().toISOString(), latency: latencyOf(steps, 'llm_reply', 'turn_recall') });
-  if (ending) s.status = 'wrapping_up';
+  if (ending && s.status === 'active') s.status = 'wrapping_up';
   persist(s);
 
   return {
@@ -472,7 +484,7 @@ function getSession(sessionId) {
 
 function cancelSession(sessionId) {
   const s = SESSIONS.get(sessionId);
-  if (s && !s.result) { s.status = 'cancelled'; SESSIONS.delete(sessionId); remove(sessionId); return true; }
+  if (s && !s.result && !s.completing) { s.status = 'cancelled'; SESSIONS.delete(sessionId); remove(sessionId); return true; }
   return false;
 }
 

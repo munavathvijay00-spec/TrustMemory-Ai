@@ -13,7 +13,7 @@ let srv;
 
 test.before(async () => {
   auth.seedDemoAccounts({ DEMO_COORDINATOR_PASSWORD: PASS.coordinator, DEMO_HELPER_PASSWORD: PASS.helper, DEMO_HOUSEHOLD_PASSWORD: PASS.household });
-  srv = await startServer(createApp({ port: 0, auth: true, seedDemo: false }));
+  srv = await startServer(createApp({ port: 0, auth: true, seedDemo: false, rateLimit: (req, res, next) => next() }));
 });
 test.after(() => srv.close());
 

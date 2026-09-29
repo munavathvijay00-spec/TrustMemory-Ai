@@ -45,7 +45,7 @@ async function outreachLoadLearning(){
 function outreachRing(helperId){
   const row = OUTREACH.today && (OUTREACH.today.calls || []).find(c => c.helper_id === helperId);
   const purpose = row ? row.purpose : '';
-  window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1, scenario: 'coaching_call'}, {helper: helperId, purpose});
+  window.VOICE_FORM = Object.assign(window.VOICE_FORM || {late: 1}, {helper: helperId, purpose, scenario: 'coaching_call'});
   nav('voice');
   // Use the language she asked to be called in (her saved preference), then ring.
   const ring = () => {

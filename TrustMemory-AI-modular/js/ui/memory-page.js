@@ -12,7 +12,7 @@ function memHeroStats(){
 }
 
 function pageMemory(){
-  if(!memSelected) memSelected = route.param || 'anita';
+  memSelected = route.param || memSelected || 'anita';
   const isHelper = S.helpers.some(h => h.id === memSelected);
   const kind = isHelper ? 'helper' : 'household';
   return `
@@ -50,6 +50,6 @@ function wireMemory(){
   if(typeof outreachWireMemory === 'function') outreachWireMemory();
   const sel = document.getElementById('memEntitySelect');
   if(sel){
-    sel.onchange = () => { memSelected = sel.value; renderCurrentPage(); };
+    sel.onchange = () => { memSelected = sel.value; nav('memory', sel.value); };
   }
 }

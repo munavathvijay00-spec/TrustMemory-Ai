@@ -93,6 +93,7 @@ async function chat(messages, { temperature = 0.6, maxTokens = 400, json = false
           continue;
         }
         if (err.status && err.status >= 500) { console.warn('[Groq] ' + m + ' returned ' + err.status + ', trying next model'); break; }
+        if (!err.status) { console.warn('[Groq] ' + m + ' failed (' + err.message + '), trying next model'); break; }
         if (err.status === 404 || /model .* does not exist|decommissioned/i.test(err.message)) {
           console.warn('[Groq] model ' + m + ' is not available, trying next model');
           break;
@@ -107,7 +108,7 @@ async function chat(messages, { temperature = 0.6, maxTokens = 400, json = false
     console.warn('[Groq] all keys and models rate limited, waiting ' + shortestWait + 'ms');
     await sleep(shortestWait + 300);
     const out = await callOnce(model, messages, { temperature, maxTokens, json }, usableKeys()[0]);
-    if (out.content) return out.content;
+    if (out.content && out.finish !== 'length') return out.content;
   }
   throw lastErr || new Error('Groq request failed.');
 }

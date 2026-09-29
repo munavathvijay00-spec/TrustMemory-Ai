@@ -72,8 +72,9 @@ function localItems(helper, lastCallId) {
 }
 
 /** Private safety notes after a time: counted only, never their content. */
-function safetyCount(helperId, sinceMs) {
-  return rows("SELECT created_at FROM safety_signals WHERE helper_id = ? AND source != 'seed'", helperId)
+function safetyCount(helperId, sinceMs, lastCallId) {
+  return rows("SELECT created_at, call_id FROM safety_signals WHERE helper_id = ? AND source != 'seed'", helperId)
+    .filter(s => !lastCallId || s.call_id !== lastCallId)
     .filter(s => Number.isNaN(sinceMs) || ms(s.created_at) > sinceMs).length;
 }
 
@@ -130,7 +131,7 @@ async function since(helperId) {
 
   let items = dedupe(local.concat(mem.items).filter(it => !Number.isNaN(ms(it.when))).filter(last ? after : () => true));
   items = items.slice(0, last ? MAX_ITEMS : NO_CALL_ITEMS);
-  const notes = safetyCount(helper.id, last ? lastMs : NaN);
+  const notes = safetyCount(helper.id, last ? lastMs : NaN, last && last.call_id);
   if (notes && last) items.unshift({ when: new Date().toISOString(), what: `${notes} private safety note${notes === 1 ? '' : 's'} (see Safety across calls)`, source: 'safety check', private: true });
   items = items.slice(0, last ? MAX_ITEMS : NO_CALL_ITEMS).map(it => ({ when: iso(it.when), what: it.what, source: it.source, ...(it.private ? { private: true } : {}) }));
 

@@ -125,7 +125,7 @@ async function handleCreateHousehold(event){
 function pageHouseholdDetail(id){
   recalcAll();
   const hh = S.households.find(x => x.id === id);
-  if(!hh) return emptyState('Household not found','');
+  if(!hh) return `<div class="card">${emptyState('Household not found', 'The link may be wrong, or the household is no longer on the roster.')}<div style="text-align:center; margin-top:10px;"><button class="btn sm" onclick="nav('people')">Back to People</button></div></div>`;
   const sc = SCORES[hh.id] || {difficulty: 20};
   const placements = S.placements.filter(p => p.householdId === id);
   const evs = householdEvents(id).slice().sort((a,b) => new Date(a.date) - new Date(b.date));
@@ -318,6 +318,6 @@ function sidesWire(householdId){
   const st = sidesState(householdId);
   const sel = document.getElementById('sidesHelper');
   const btn = document.getElementById('sidesBtn');
-  if(sel) sel.onchange = () => { st.helper = sel.value; st.data = null; st.error = ''; };
+  if(sel) sel.onchange = () => { st.helper = sel.value; st.data = null; st.error = ''; renderCurrentPage(); };
   if(btn) btn.onclick = () => sidesLoad(householdId);
 }

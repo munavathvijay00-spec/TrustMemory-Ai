@@ -247,7 +247,7 @@ async function compare(householdId, helperId) {
     helpers: placed.map(p => ({ id: p.id, name: p.name, status: p.status })),
     generated_at: new Date().toISOString(),
   }, result);
-  cache.set(key, { at: Date.now(), result });
+  if (result.source === 'hindsight' || !hindsight.isConfigured()) cache.set(key, { at: Date.now(), result });
   return result;
 }
 

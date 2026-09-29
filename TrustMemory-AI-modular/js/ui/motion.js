@@ -256,8 +256,9 @@ function motionConstellation(host){
     view.yaw = state.yaw; view.pitch = state.pitch;   // re-renders continue where the sphere was
     if(state.visible && !document.hidden && !MOTION.reduced) state.raf = requestAnimationFrame(loop);
   }
-  function start(){ if(!state.raf && !MOTION.reduced) state.raf = requestAnimationFrame(loop); }
-  function stop(){ if(state.raf) cancelAnimationFrame(state.raf); state.raf = null; ro.disconnect(); vis.disconnect(); CONSTELLATIONS.delete(host); }
+  function start(){ if(!document.body.contains(host)){ stop(); return; } if(!state.raf && !MOTION.reduced) state.raf = requestAnimationFrame(loop); }
+  function stop(){ if(state.raf) cancelAnimationFrame(state.raf); state.raf = null; ro.disconnect(); vis.disconnect(); document.removeEventListener('visibilitychange', onVisibility); CONSTELLATIONS.delete(host); }
+  function onVisibility(){ if(!document.hidden) start(); }
 
   function pick(e){
     const r = canvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
@@ -293,9 +294,10 @@ function motionConstellation(host){
   });
   canvas.addEventListener('pointerleave', () => { state.hover = null; tip.classList.remove('on'); });
 
-  const ro = new ResizeObserver(resize); ro.observe(host);
+  // A re-render replaces the host; the first observer callback after that releases this instance.
+  const ro = new ResizeObserver(() => { if(!document.body.contains(host)){ stop(); return; } resize(); }); ro.observe(host);
   const vis = new IntersectionObserver(es => { state.visible = es[0].isIntersecting; if(state.visible) start(); }); vis.observe(host);
-  document.addEventListener('visibilitychange', () => { if(!document.hidden) start(); });
+  document.addEventListener('visibilitychange', onVisibility);
   resize(); start();
 
   const api = {

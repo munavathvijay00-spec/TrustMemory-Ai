@@ -80,7 +80,9 @@ function isHerWords(f) {
   const tags = f.tags || [];
   const kind = (f.metadata || {}).kind;
   if (doc.startsWith('correction:') || tags.includes('source:helper_correction')) return true;
-  if (doc.startsWith('request:') || doc.startsWith('prefs:helper:') || tags.includes('source:self_report')) return true;
+  // Both sides' requests carry both tags; who wrote it is in the metadata (helper_id or household_id).
+  const fromHousehold = Boolean((f.metadata || {}).household_id) && !(f.metadata || {}).helper_id;
+  if (!fromHousehold && (doc.startsWith('request:') || doc.startsWith('prefs:helper:') || tags.includes('source:self_report'))) return true;
   if (/^call:.+:transcript$/.test(doc)) return true;
   if (doc.startsWith('seed:') && kind === 'helperSaid') return true;
   return false;
@@ -298,6 +300,9 @@ async function forget(helperId, confirmName) {
       throw new MemoryUnavailableError('Could not reach the memory bank, so nothing was deleted. Try again in a minute. (' + err.message + ')');
     }
     for (const d of docs) if (await deleteDocument(d.id)) result.documents += 1;
+    if (result.documents < docs.length) {
+      throw new MemoryUnavailableError(`Deleted ${result.documents} of ${docs.length} memory documents; nothing else was changed. Try again to delete the rest.`);
+    }
     try { await hindsight.mentalModels.remove('coach-' + helper.id); result.standing_profile = true; } catch { /* no standing profile */ }
   }
   for (const [table, where] of LOCAL_ROWS) {
@@ -308,6 +313,10 @@ async function forget(helperId, confirmName) {
   const clear = ['location', 'background', 'pref_language', 'call_window', 'pref_notes', 'availability'].filter(c => cols.has(c));
   db.prepare(`UPDATE helpers SET name = 'Forgotten helper'${clear.map(c => `, ${c} = NULL`).join('')} WHERE id = ?`).run(helper.id);
   activity('MEMORY AGENT — Forgot all memory about a helper at the coordinator\'s request.');
+  // Recalled text about her must not linger in feature caches under "Forgotten helper".
+  for (const mod of ['./outreach', './friction', './sides', './care']) {
+    try { const m = require(mod); if (m.clearMemoryCache) m.clearMemoryCache(); if (m.clearCache) m.clearCache(); } catch { /* optional */ }
+  }
   return result;
 }
 

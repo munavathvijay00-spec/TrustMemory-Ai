@@ -10,6 +10,7 @@
  * Helpers also set how the agency should call them (language, best time); households describe
  * what the next helper should know about their home.
  */
+const { istDate, isRealDate } = require('./dates');
 const db = require('./db');
 const hindsight = require('./hindsight');
 const retainQueue = require('./retain-queue');
@@ -55,7 +56,7 @@ class ValidationError extends Error {
 }
 
 function nowSql() { return new Date().toISOString().replace('T', ' ').substring(0, 19); }
-function today() { return new Date().toISOString().slice(0, 10); }
+function today() { return istDate(); }
 function newId(prefix) { return prefix + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7); }
 
 function clean(value, field, { min = 0, max = 500 } = {}) {
@@ -66,7 +67,7 @@ function clean(value, field, { min = 0, max = 500 } = {}) {
 
 function checkDate(value, field) {
   const v = String(value || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || isNaN(new Date(v + 'T00:00:00Z'))) throw new ValidationError(`${field} must be a date (YYYY-MM-DD).`);
+  if (!isRealDate(v)) throw new ValidationError(`${field} must be a date (YYYY-MM-DD).`);
   const days = Math.round((new Date(v + 'T00:00:00Z') - new Date(today() + 'T00:00:00Z')) / 86400000);
   if (days < -7) throw new ValidationError(`${field} is too far in the past.`);
   if (days > MAX_DAYS_AHEAD) throw new ValidationError(`${field} can be at most ${MAX_DAYS_AHEAD} days ahead.`);

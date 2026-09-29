@@ -246,7 +246,7 @@ Errors are JSON, `{ "error": "message", "code": "CODE" }`: `400 VALIDATION` or `
 ## Testing
 
 ```bash
-npm test                 # node:test, 106 tests
+npm test                 # node:test, 111 tests
 npm run lint             # ESLint 9, recommended rules
 npm run test:coverage    # fails if server/ line coverage drops below 75% (currently about 88%)
 npm run eval:memory      # recall accuracy and leaks between helpers, against the live bank
@@ -298,7 +298,7 @@ server/                  Express app, agents, Hindsight and Groq clients, SQLite
   people.js              validated helpers and households   db.js, sqlite-compat.js
   seed-memory.js         seeds the bank                     seed/             feature seed history
   reset-bank.js          back to the seeded state           eval-memory.js    the memory eval
-  validate.js, rate-limit.js, health-routes.js, logger.js
+  validate.js, rate-limit.js, health-routes.js, logger.js, dates.js (dates in India time)
 TrustMemory-AI-modular/  the console for all three roles (index.html) and the helper phone (helper.html);
                          full file map in TrustMemory-AI-modular/README.md
 docs/                    screenshots, memory-eval.md

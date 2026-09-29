@@ -195,3 +195,10 @@ test('record: only the coordinator reviews corrections', async () => {
     await srv.close();
   }
 });
+
+test('record: a household\'s request tagged with her id is not shown to her as her own words', () => {
+  const household = { documentId: 'request:req_9', type: 'world', tags: ['household:h101', 'source:self_report', 'helper:lakshmi'], metadata: { household_id: 'h101', kind: 'self_report' } };
+  const hers = { documentId: 'request:req_8', type: 'world', tags: ['helper:lakshmi', 'source:self_report', 'household:h101'], metadata: { helper_id: 'lakshmi', kind: 'self_report' } };
+  assert.equal(record.isHerWords(household), false);
+  assert.equal(record.isHerWords(hers), true);
+});

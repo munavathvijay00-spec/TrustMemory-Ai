@@ -62,7 +62,8 @@ const RULES = {
 };
 
 function validate(req, res, next) {
-  const rule = RULES[req.method + ' ' + req.path];
+  // Same matching as Express: /api/voice/Turn and /api/voice/turn/ reach the same handler.
+  const rule = RULES[req.method + ' ' + String(req.path).toLowerCase().replace(/(.)\/+$/, '$1')];
   if (!rule) return next();
   const problem = rule(req);
   if (!problem) return next();

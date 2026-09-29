@@ -20,7 +20,7 @@ async function authJson(path, body){
 
 /**
  * Ask the server who is signed in. Resolves to 'ok', 'gate' (nobody signed in), 'pending',
- * or 'offline' (server unreachable: the console falls back to the coordinator view).
+ * or 'offline' (server unreachable: the reconnecting screen is shown, which retries).
  */
 async function authBoot(){
   let me;
@@ -359,6 +359,7 @@ async function authApprove(id){
   try {
     await authJson('/api/auth/approve/' + encodeURIComponent(id), {});
     if(typeof log === 'function') log('mem', 'MEMORY AGENT', 'Approved a new account; the profile is now in the roster and in Hindsight.');
+    if(typeof syncBackendData === 'function') syncBackendData();
   } catch(e){
     // e.g. a helper with the same name was added meanwhile: say why instead of failing silently.
     if(typeof polishToast === 'function') polishToast(e.message || 'Could not approve the account.', 'decision');

@@ -8,13 +8,21 @@
 const DEFAULT_GROUPS = [
   { name: 'voice', prefix: '/api/voice/', limit: 30, windowMs: 60_000 },
   { name: 'memory', prefix: '/api/memory/', limit: 60, windowMs: 60_000 },
+  // Sign-in, sign-up and demo sign-in hash passwords (scrypt), so they are limited too.
+  { name: 'auth', prefix: '/api/auth/', limit: 20, windowMs: 60_000 },
 ];
 
+/** Express matches paths case-insensitively and with or without a trailing slash; compare the same way. */
+function normPath(path) { return String(path || '').toLowerCase().replace(/(.)\/+$/, '$1'); }
+
 function defaultExempt(req) {
+  const p = normPath(req.path);
+  if (req.method === 'POST' && p === '/api/auth/logout') return true;
   if (req.method !== 'GET') return false;
-  return req.path === '/api/voice/incoming'
-    || req.path === '/api/memory/status'
-    || /^\/api\/voice\/session\/[^/]+$/.test(req.path);
+  return p === '/api/voice/incoming'
+    || p === '/api/memory/status'
+    || p.startsWith('/api/auth/')
+    || /^\/api\/voice\/session\/[^/]+$/.test(p);
 }
 
 function createRateLimiter({ groups = DEFAULT_GROUPS, exempt = defaultExempt, now = Date.now, maxKeys = 10_000 } = {}) {
@@ -47,7 +55,8 @@ function createRateLimiter({ groups = DEFAULT_GROUPS, exempt = defaultExempt, no
   }
 
   function rateLimit(req, res, next) {
-    const group = groups.find(g => req.path.startsWith(g.prefix));
+    const p = normPath(req.path);
+    const group = groups.find(g => p.startsWith(g.prefix));
     if (!group || exempt(req)) return next();
     const r = take(group, req.ip || (req.socket && req.socket.remoteAddress) || 'unknown');
     res.set('X-RateLimit-Limit', String(group.limit));
@@ -63,4 +72,4 @@ function createRateLimiter({ groups = DEFAULT_GROUPS, exempt = defaultExempt, no
   return rateLimit;
 }
 
-module.exports = { createRateLimiter, DEFAULT_GROUPS };
+module.exports = { createRateLimiter, DEFAULT_GROUPS, normPath };
