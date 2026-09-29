@@ -243,6 +243,21 @@ function seedDemoAccounts(env = process.env) {
   return generated;
 }
 
+/**
+ * One-click demo sign-in for reviewers. On when a demo account's password comes from the
+ * environment (those passwords are published in the README); DEMO_ONE_CLICK=0 turns it off.
+ */
+function demoRoles(env = process.env) {
+  if (env.DEMO_ONE_CLICK === '0') return [];
+  return DEMO_ACCOUNTS.filter(d => env[d.env]).map(d => d.role);
+}
+
+function demoLogin(role, ip = '', env = process.env) {
+  const d = DEMO_ACCOUNTS.find(x => x.role === role);
+  if (!d || !demoRoles(env).includes(role)) throw new AuthError('One-click demo sign-in is not available.', 404, 'NOT_FOUND');
+  return login(d.email, env[d.env], ip);
+}
+
 /* ------------------------------------------------------------------ cookies */
 
 function readCookie(req, name = COOKIE) {
@@ -267,5 +282,5 @@ function sessionCookie(req, token, expires) {
 module.exports = {
   ROLES, COOKIE, AuthError, DEMO_ACCOUNTS,
   checkEmail, checkPassword, signup, createCoordinator, login, logout, accountForToken, publicAccount,
-  pending, approve, seedDemoAccounts, readCookie, sessionCookie, hashPassword,
+  pending, approve, seedDemoAccounts, demoRoles, demoLogin, readCookie, sessionCookie, hashPassword,
 };

@@ -45,7 +45,7 @@ function pageDashboard(){
         <div style="font-size:12px; color:var(--ink-soft); margin-top:2px;">Promise to check: ${escapeHtml(x.text)}</div></div>
         <button class="btn sm primary" onclick="dashRing('${x.helper_id}')">Ring</button>
       </div>`).join('')}</div>`
-    : `<div class="card">${emptyState('No follow-ups due in the next three days.', 'Every promise made on a call gets a check-in date two weeks later; it appears here when it is due.')}</div>`;
+    : `<div class="card" style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; font-size:12.5px;"><b>No follow-ups due in the next three days.</b><span style="color:var(--ink-soft);">Every promise made on a call gets a check-in date two weeks later; it appears here when it is due.</span></div>`;
 
   const alertsHtml = !d || d.error ? '' : (d.alerts.length
     ? d.alerts.map(a => `<div class="alert"><div class="flag ${a.level}"></div><div class="body"><div class="title">${escapeHtml(a.title)}</div><div class="sub">${escapeHtml(a.detail)}</div></div><div class="cta">${dashAction(a.action)}</div></div>`).join('')

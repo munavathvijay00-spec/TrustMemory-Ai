@@ -119,7 +119,38 @@ function authLoginForm(){
       <div class="auth-error" id="authError"></div>
       <button class="btn primary auth-submit" type="submit">Sign in</button>
     </form>
-    <div class="auth-switch">New helper or household? <a onclick="authShow('signup')">Create an account</a></div>`;
+    <div class="auth-switch">New helper or household? <a onclick="authShow('signup')">Create an account</a></div>
+    ${authDemoHtml()}`;
+}
+
+/* One-click demo sign-in, offered only when the server says the demo accounts are public. */
+let AUTH_DEMO_ROLES = null;
+const AUTH_DEMO_LABELS = {coordinator: ['Coordinator', 'the full console'], helper: ['Helper', 'as Radha'], household: ['Household', 'the Gupta family']};
+
+function authDemoHtml(){
+  if(!AUTH_DEMO_ROLES || !AUTH_DEMO_ROLES.length) return '';
+  return `<div class="auth-demo">
+      <div class="auth-demo-label">Just looking? Explore the demo as</div>
+      <div class="auth-demo-btns">${AUTH_DEMO_ROLES.filter(r => AUTH_DEMO_LABELS[r]).map((r, i) => `<button type="button" class="auth-demo-btn${i === 0 ? ' first' : ''}" data-demo="${r}"><b>${AUTH_DEMO_LABELS[r][0]}</b><span>${AUTH_DEMO_LABELS[r][1]}</span></button>`).join('')}</div>
+    </div>`;
+}
+
+async function authLoadDemo(){
+  try {
+    const r = await fetch('/api/auth/demo');
+    const d = r.ok ? await r.json() : {};
+    AUTH_DEMO_ROLES = Array.isArray(d.roles) ? d.roles : [];
+  } catch(e){ AUTH_DEMO_ROLES = []; }
+  if(AUTH_VIEW !== 'signup' && document.getElementById('authLoginForm')) showAuthGate();
+}
+
+async function authDemoSignIn(role, btn){
+  btn.disabled = true;
+  try {
+    await authJson('/api/auth/demo', {role});
+    if(history.replaceState) history.replaceState(null, '', location.pathname);
+    location.reload();
+  } catch(e){ authError(e.message); btn.disabled = false; }
 }
 
 function authSignupForm(){
@@ -195,6 +226,8 @@ function showAuthGate(view){
     </div>`;
   const lf = document.getElementById('authLoginForm');
   if(lf && lf.addEventListener) lf.addEventListener('submit', authSubmitLogin);
+  if(c.querySelectorAll) c.querySelectorAll('[data-demo]').forEach(b => { b.onclick = () => authDemoSignIn(b.dataset.demo, b); });
+  if(AUTH_DEMO_ROLES === null && typeof fetch === 'function'){ AUTH_DEMO_ROLES = []; authLoadDemo(); }
   const sf = document.getElementById('authSignupForm');
   if(sf && sf.addEventListener) sf.addEventListener('submit', authSubmitSignup);
 }

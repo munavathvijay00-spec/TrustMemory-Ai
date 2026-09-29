@@ -38,7 +38,7 @@ function renderObservationsBlock(kind, id, opts){
   } else if(!st.items.length){
     body = `<div style="font-size:12.5px; color:var(--ink-soft);">No consolidated observations yet. Hindsight forms them in the background as facts accumulate.</div>`;
   } else {
-    body = `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.6;">${st.items.map(o => `<li>${memuiClean(o.text)}${o.evidence && o.evidence.length ? ` <details style="display:inline;"><summary style="display:inline; cursor:pointer; font-size:10.5px; color:var(--teal); font-weight:600;">based on ${o.evidence.length} fact${o.evidence.length === 1 ? '' : 's'}</summary><ul style="margin:2px 0 4px; padding-left:16px; font-size:11.5px; color:var(--ink-soft);">${o.evidence.map(e => `<li>${memuiClean(e.text)}${e.when ? ` (${memuiDate(e.when)})` : ''}</li>`).join('')}</ul></details>` : ''}${o.id ? ` <button type="button" class="memui-hist" data-hist="${escapeHtml(o.id)}" style="border:0; background:none; padding:0; cursor:pointer; font-size:10.5px; color:var(--brass-dark); font-weight:600;">${MEMUI.hist[o.id] && MEMUI.hist[o.id].open ? 'hide how it formed' : 'how it formed'}</button>${memuiHistoryHtml(o.id)}` : ''}</li>`).join('')}</ul>`;
+    body = `<ul style="margin:0; padding-left:18px; font-size:12.5px; line-height:1.6;">${st.items.map(o => `<li style="margin-bottom:6px;">${memuiClean(o.text)}${memuiObsMeta(o)}${o.id ? memuiHistoryHtml(o.id) : ''}</li>`).join('')}</ul>`;
   }
   return `<div class="card" style="border-left:3px solid var(--brass);">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; flex-wrap:wrap;">
@@ -59,6 +59,18 @@ async function memuiLoadObservations(kind, id){
     MEMUI.cache[key] = {status:'error', error: e.message};
   }
   if(typeof renderCurrentPage === 'function') renderCurrentPage();
+}
+
+/** One row under a belief: its source facts (expandable) and how it formed. */
+function memuiObsMeta(o){
+  const ev = o.evidence && o.evidence.length
+    ? `<details><summary style="cursor:pointer; font-size:10.5px; color:var(--teal); font-weight:600;">based on ${o.evidence.length} fact${o.evidence.length === 1 ? '' : 's'}</summary><ul style="margin:2px 0 4px; padding-left:16px; font-size:11.5px; color:var(--ink-soft);">${o.evidence.map(e => `<li>${memuiClean(e.text)}${e.when ? ` (${memuiDate(e.when)})` : ''}</li>`).join('')}</ul></details>`
+    : '';
+  const hist = o.id
+    ? `<button type="button" data-hist="${escapeHtml(o.id)}" style="border:0; background:none; padding:0; cursor:pointer; font-size:10.5px; color:var(--brass-dark); font-weight:600; font-family:inherit;">${MEMUI.hist[o.id] && MEMUI.hist[o.id].open ? 'hide how it formed' : 'how it formed'}</button>`
+    : '';
+  if(!ev && !hist) return '';
+  return `<div style="display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; margin-top:1px;">${ev}${hist}</div>`;
 }
 
 /* ------------------------------------------------------------------ how a belief formed (observation history) */

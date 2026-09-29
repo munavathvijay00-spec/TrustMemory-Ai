@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "TrustMemory AI - Outbound Voice Agent and Institutional Memory for Home-Care Agencies",
   "main": "server/index.js",
+  "license": "MIT",
   "scripts": {
     "start": "node server/index.js",
     "server": "node server/index.js",

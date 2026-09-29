@@ -6,54 +6,93 @@
 > Lakshmi mentioned her salary was late on three calls, weeks apart. No single call sounded alarming.
 > TrustMemory noticed the pattern and flagged it, privately, for the coordinator.
 
-A voice agent for Indian home-care agencies that remembers every helper, built on [Hindsight](https://hindsight.vectorize.io) memory.
-
-- **Across calls:** it recalls what the agency knows before its first word and on every turn, and cites every fact it uses.
-- **Across people:** a household's memory becomes a briefing for the next helper, in her language (English, Hindi or Telugu).
-- **Across time:** "last Dussehra she came back 9 days late" puts her on today's call list weeks before the festival.
-
-**Try it in 60 seconds:** open [trustmemory-ai.onrender.com](https://trustmemory-ai.onrender.com), sign in as the coordinator (credentials are in our submission), go to **Dashboard**, then **Today's calls**, then **Ring with this reason**. Code: [github.com/munavathvijay00-spec/TrustMemory-Ai](https://github.com/munavathvijay00-spec/TrustMemory-Ai).
-
-**[Watch the 3-minute demo](https://youtu.be/Skc0GNiy0uk)**
-
-![A live call: the agent answers from memory and cites the facts it used](docs/screenshots/call.gif)
-
-## What's new here
-
-Most agents with memory use it to answer the next question better. TrustMemory uses [Hindsight](https://github.com/vectorize-io/hindsight) memory in ways a single conversation can't, and treats that memory responsibly:
-
-1. **Memory as evidence, not a verdict.** Late pay mentioned on two calls weeks apart raises a private safety check that shows her own dated words. The rules decide whether to flag; memory supplies the evidence; a coordinator decides what happens next. (`server/care.js`)
-2. **Memory that moves between people.** What the agency learned about a household becomes a briefing for the next helper, in her language, without naming or blaming anyone before her. (`server/care.js`, handover brief)
-3. **Memory that looks ahead.** "Last Dussehra she came back 9 days late" puts her on the call list weeks before this year's festival. (`server/outreach.js`)
-4. **Memory that learns across the agency.** Every kept or broken promise is stored with the coaching approach that preceded it, so a new helper with no history starts from what worked for others with the same kind of problem. (`server/commitments.js`)
-5. **Memory that can be seen, corrected and forgotten.** A helper sees what the agency remembers from her own words and can correct any fact; her correction is retained to Hindsight and takes priority on the next call. Temporary circumstances (unwell, travelling, on leave) older than 30 days are marked as possibly outdated, so the agent asks instead of assuming. A coordinator can have every memory about a helper deleted on request, confirmed by typing her name. (`server/record.js`)
-6. **Memory that joins two people's histories.** Before a placement, *Check friction* on the Matching page reads the helper's constraints and the household's expectations and names the likely clashes before day one, each with the dated facts on both sides and one fix to agree up front. When a placement is already struggling, *Both sides of the story* on the household page lines up what each side said, topic by topic, with neutral questions for a mediation call. Neither decides who is right. (`server/friction.js`, `server/sides.js`)
-7. **Memory that says what's new.** Before ringing a helper, the coordinator sees what changed since the last call: promises, requests, corrections, household feedback and new memories, newest first. (`server/since.js`)
-8. **Memory that retires what is wrong.** When the coordinator agrees with a helper's correction, the old fact is invalidated in Hindsight: recall never returns it again, but it stays on record and one click restores it. (`server/record.js`)
-9. **Memory that shows how it changed its mind.** Every consolidated belief has *how it formed*: the earlier versions of the belief and the new facts that made Hindsight revise each one, with dates. (`server/memory-routes.js`)
-
-Measured with `npm run eval:memory`: 13 questions whose answers only came up on earlier calls. Recall found the right fact in the top 5 for 13 of 13 (10 ranked first), with 0 results about a different helper. [Full results](docs/memory-eval.md).
-
-The same call, with and without memory (the console's *Compare without memory* button runs this live):
-
-![The same call opening, without memory and with memory](docs/screenshots/with-without-memory.png)
-
-## Why
-
-Indian home-care agencies place helpers (elder care, child care, cooking, cleaning) with households. What makes a placement work lives in one coordinator's head: that Radha's daughter's school now starts at 8:00, that she asked not to be called before 10, that last Dussehra she went home and came back 9 days late. When that coordinator is busy or leaves, the agency forgets, and the helper quits or the household is left without cover. TrustMemory gives the agency a memory, and agents that use it.
-
-## What it does
+**A voice agent for Indian home-care agencies that remembers every helper, built on [Hindsight](https://hindsight.vectorize.io) agent memory.** It calls domestic helpers in English, Hindi or Telugu, recalls what the agency knows before its first word and on every turn, cites every fact it uses, and notices what no single call shows.
 
 | | |
 |---|---|
-| **Calls that remember** | The voice agent recalls what the agency knows before its first word and again on every turn, cites each remembered fact (`[m1]`), and learns only from what the helper herself said. English, Hindi or Telugu. |
-| **Calls before problems** | *Today's calls* ranks who to ring and why: a festival ahead and her travel history, repeated salary advances, a promise due for a check-in. One click rings her with that reason. |
-| **Notices patterns** | A helper rarely says "I am mistreated" in one call. When her own words about late pay, long hours or not being allowed out repeat across calls, the coordinator gets a private safety flag with her dated quotes. |
-| **Keeps promises honest** | Every promise gets a check-in date and the coaching approach used; the agency learns which approach keeps promises for each kind of problem, across helpers. |
-| **Hands over a home** | When a placement changes, the household's memory becomes a briefing for the next helper, in her language, without naming or blaming anyone. |
-| **Three roles** | Coordinators see everything. Helpers see what they agreed, plan festival leave and tell the agency about problems, with no scores ever. Households give feedback, ask for cover and write what the next helper should know. |
-| **Speaks her language** | With Azure AI Speech configured, the helper's phone speaks Hindi and Telugu in neural voices (te-IN-ShrutiNeural, hi-IN-SwaraNeural); otherwise it uses the browser's voices or shows the text. |
-| **Follows up on WhatsApp** | After a call, the coordinator can draft a short follow-up in the helper's language, built only from what she said and agreed. It is copied or opened in WhatsApp, never sent automatically. |
+| **Try it** | Open **[trustmemory-ai.onrender.com](https://trustmemory-ai.onrender.com)** and click **Coordinator** under *Explore the demo*. Then **Dashboard → Today's calls → Ring with this reason**. (The free server may take about 50 seconds to wake up.) |
+| **Watch** | [Demo video](https://youtu.be/Skc0GNiy0uk) |
+| **Proof** | Recall found the right fact for **13 of 13** questions about earlier calls, with **0** results about the wrong helper ([eval](docs/memory-eval.md)) |
+
+![A live call: the agent answers from memory and cites the facts it used](docs/screenshots/call.gif)
+
+## Contents
+
+[The problem](#the-problem) · [What it does](#what-it-does) · [How it uses Hindsight](#how-it-uses-hindsight) · [Does memory help?](#does-memory-help) · [Screens](#screens) · [Run it](#run-it) · [Architecture](#architecture) · [Testing](#testing) · [Limits and roadmap](#limits-and-roadmap)
+
+## The problem
+
+Indian home-care agencies place helpers (elder care, child care, cooking, cleaning) with households. What makes a placement work lives in one coordinator's head: that Radha's daughter's school now starts at 8:00, that she asked not to be called before 10, that last Dussehra she went home and came back 9 days late. When that coordinator is busy or leaves, the agency forgets. The helper quits, or the household is left without cover, or a helper who is being mistreated is never noticed because she only ever hinted at it, one call at a time.
+
+TrustMemory gives the agency a memory, and agents that use it.
+
+## What it does
+
+Most agents with memory use it to answer the next question better. TrustMemory uses memory in ways one conversation can't, and treats it responsibly.
+
+**Across calls**
+1. **Calls that remember.** Before the first word and on every turn, the agent recalls the helper's history, her standing profile, her household's expectations and her open promises. Every remembered fact it uses is cited (`[m1]`), and after the call it learns only from what she said, never from what the agent said.
+2. **Patterns no single call shows.** When her own words about late pay, long hours or not being allowed out repeat across calls, the coordinator gets a private safety check with her dated quotes. The rules decide whether to flag, memory supplies the evidence, and a person decides what happens next. The household never sees it.
+3. **What changed since the last call.** Before ringing her again, the coordinator sees her new promises, requests, corrections, household feedback and memories, newest first.
+
+**Across people**
+
+4. **A household's memory briefs the next helper.** When a placement changes, what the agency learned about a home becomes a briefing for the next helper, in her language, without naming or blaming anyone before her.
+5. **Friction before day one.** *Check friction* on the Matching page reads the helper's constraints and the household's expectations, names the likely clashes with dated facts on both sides, and suggests one thing to agree up front.
+6. **Both sides of the story.** When a placement is struggling, the household page lines up what each side said, topic by topic, with neutral questions for a mediation call. It never decides who is right.
+7. **The agency learns what works.** Every kept or broken promise is stored with the coaching approach that preceded it, so a new helper with no history starts from what worked for others with the same kind of problem.
+
+**Across time**
+
+8. **Calls before problems.** *Today's calls* ranks who to ring and why. "Last Dussehra she came back 9 days late" puts her on the list weeks before this year's festival; repeated salary advances or a promise due for a check-in do too.
+9. **Beliefs that explain themselves.** Every consolidated belief has *how it formed*: its earlier versions and the new facts that made Hindsight revise each one, with dates.
+
+**Responsibly**
+
+10. **Seen, corrected and forgotten.** A helper sees what the agency remembers from her own words and can say "This is wrong". Her correction takes priority on the next call, and once the coordinator agrees, the old fact is retired in Hindsight: recall never returns it again, but it can be restored. Temporary facts (unwell, travelling, on leave) older than 30 days are marked as possibly outdated, so the agent asks instead of assuming. A coordinator can have everything about a helper forgotten, confirmed by typing her name.
+11. **Scores never reach helpers.** Helpers see what they agreed and what is on record, never a trust or churn number. A Hindsight directive enforces this in every reflection.
+
+**For every role**
+
+- **Coordinators** see everything: dashboard, people, Hindsight Core, matching, the voice agent and the activity log.
+- **Helpers** see their promises and calls, plan festival leave, tell the agency about problems, and set when and in which language to be called.
+- **Households** give feedback, ask for cover and write what the next helper should know.
+- **After a call**, the coordinator can draft a WhatsApp follow-up in the helper's language, built only from what she said and agreed. It is never sent automatically.
+- **Neural voices**: with Azure AI Speech configured, the phone speaks Telugu and Hindi in neural voices (`te-IN-ShrutiNeural`, `hi-IN-SwaraNeural`); otherwise it uses the browser's voices.
+
+## How it uses Hindsight
+
+One bank for the agency (`trustmemory-agency`). Every item is tagged `helper:<id>` and/or `household:<id>` and carries a real timestamp, so each recall is scoped to the right person and knows when things were said.
+
+| Hindsight feature | What TrustMemory uses it for | Code |
+|---|---|---|
+| **Retain** | Call transcripts and summaries, call outcomes with the coaching approach used, coordinator notes and feedback, household feedback, helper requests and corrections | `server/voice-agent.js`, `server/memory-routes.js`, `server/record.js` |
+| **Recall** | Before the first word and on every turn of a call, matching evidence, friction checks, since-last-call, the helper's own record | `server/voice/recall.js`, `server/friction.js`, `server/since.js` |
+| **Reflect** | Coordinator briefs, who to call today, safety summaries, handover briefs, friction checks, both sides of a story and proposed rules, with JSON response schemas and cited sources | `server/memory-routes.js`, `server/care.js`, `server/friction.js`, `server/sides.js` |
+| **Observations** | Consolidated beliefs with their source facts on helper, household and Hindsight Core pages | `server/hindsight.js` (`observations`) |
+| **Observation history** | *How it formed*: each earlier version of a belief and the facts that revised it | `/api/memory/observations/:id/history` |
+| **Mental models** | A standing profile per helper (`coach-<id>`) and household (`household-<id>`), read before each call and rewritten after | `server/seed-memory.js`, `server/voice-agent.js` |
+| **Directives** | Hard rules every reflection obeys: no scores to helpers, respect call windows, helper claims are not policy, commitments before criticism | `server/seed-memory.js` (`DIRECTIVES`) |
+| **Curation** | A fact the helper corrected is invalidated once the coordinator agrees, and can be restored | `server/record.js` (`retire`, `restore`) |
+| **Documents** | Forgetting a helper deletes every document tagged to her | `server/record.js` (`forget`) |
+| **Bank config** | Mission, disposition (empathy 4, skepticism 2, literalism 2) | `server/seed-memory.js` |
+
+If Hindsight is unreachable, retains go to a durable local queue and are retried; dropped connections to Hindsight are retried once.
+
+## Does memory help?
+
+`npm run eval:memory` asks 13 questions the agent needs answered before a call, each about something that only came up on an earlier call, and checks the top 5 recall results against the live bank:
+
+| | Scoped to her (as the app recalls) |
+|---|---|
+| Right fact in the top 5 | **13 of 13** |
+| Right fact ranked first | 10 of 13 |
+| Results about a different helper | **0** |
+| Median recall time | about 0.8 s |
+
+Full table: [docs/memory-eval.md](docs/memory-eval.md). The console's *Compare without memory* button runs the same call opening with and without memory, live:
+
+![The same call opening, without memory and with memory](docs/screenshots/with-without-memory.png)
 
 ## Screens
 
@@ -67,17 +106,25 @@ Indian home-care agencies place helpers (elder care, child care, cooking, cleani
 | **The helper's own view** | **Dark mode** |
 | ![Helper view](docs/screenshots/helper-home.png) | ![Dark mode](docs/screenshots/dark-dashboard.png) |
 
-## Live deployment
+## Run it
 
-TrustMemory AI is deployed on Render and running at **https://trustmemory-ai.onrender.com**.
+### Live
 
-- One Docker web service (the `Dockerfile` in this repo) serves the API and all pages: the coordinator console, sign-in, the helper and household views, and the helper phone screen at `/helper.html?helper=radha`.
-- Region Singapore, deployed from the `dev` branch, with a health check on `/api/health`.
-- It uses the same Hindsight bank (`trustmemory-agency`) and Groq models as a local run; secrets are set in the Render dashboard, never in the repo.
-- The free plan sleeps when idle, so the first visit after a quiet spell takes about 50 seconds. Local data (calls, requests, new sign-ups) resets on each redeploy; the Hindsight memory is kept.
-- Sign in with the demo accounts below; passwords are shared with judges on request.
+Running at **https://trustmemory-ai.onrender.com**: one Docker web service on Render (Singapore) serving the API and every page, deployed from the `dev` branch with a health check on `/api/health`. It uses the same Hindsight bank as a local run. API keys live in the Render dashboard, never in the repo. The free plan sleeps when idle, so the first visit can take about 50 seconds; local data (calls, requests, sign-ups) resets on each redeploy, while the Hindsight memory is kept.
 
-## Quick start
+### Demo accounts
+
+Everything in the demo is made up: the agency, its helpers and its households. The sign-in page has one-click *Explore the demo* buttons for each role, or use:
+
+| Role | Email | Password | What you see |
+|---|---|---|---|
+| Coordinator | `coordinator@trustmemory.demo` | `TmGHQO0SGMJn24` | The full console |
+| Helper (Radha) | `radha@trustmemory.demo` | `TmwQZKv2JgXg81` | Her promises, calls, what the agency has on record, "This is wrong" |
+| Household (Gupta) | `gupta@trustmemory.demo` | `Tm8lrJR5KdP912` | Its helper, next check-in, feedback |
+
+Sign-in is shared across tabs in one browser, so use a private window for a second role. To try a full call, sign in as the coordinator, open the helper's phone at `/helper.html?helper=radha` in a second window, switch the line on, then ring her from **Voice Agent** or **Today's calls**. [DEMO.md](DEMO.md) has a timed walkthrough.
+
+### Locally
 
 Requires Node 22.13+ or 24, and Chrome or Edge for speech.
 
@@ -90,227 +137,176 @@ npm run seed:memory       # once: dated history, mission, directives, standing p
 npm start                 # http://localhost:3000
 ```
 
-Optional: set `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` (for example `centralindia`) to give the phone screen neural Hindi and Telugu voices.
+| Variable | Needed | What for |
+|---|---|---|
+| `GROQ_API_KEYS` | yes | The voice agent and extraction; several comma-separated keys rotate |
+| `HINDSIGHT_API_KEY` | yes | Hindsight Cloud (or set `HINDSIGHT_API_URL` for a self-hosted server) |
+| `DEMO_COORDINATOR_PASSWORD`, `DEMO_HELPER_PASSWORD`, `DEMO_HOUSEHOLD_PASSWORD` | no | Demo account passwords; random ones are printed once if unset |
+| `AZURE_SPEECH_KEY`, `AZURE_SPEECH_REGION` | no | Neural Telugu and Hindi voices (region e.g. `centralindia`) |
+| `DEMO_ONE_CLICK` | no | `0` hides the one-click demo buttons |
+| `TRUST_PROXY` | behind a proxy | `1` on Render, so rate limits see the real client |
 
-Three demo accounts are created on first start: `coordinator@trustmemory.demo`, `radha@trustmemory.demo` (helper) and `gupta@trustmemory.demo` (household). Their passwords come from `DEMO_COORDINATOR_PASSWORD`, `DEMO_HELPER_PASSWORD` and `DEMO_HOUSEHOLD_PASSWORD` in `.env`; if unset, random ones are printed once in the server log.
-
-To try a call: sign in as the coordinator, open the helper's phone screen at `/helper.html?helper=radha` in a second window, switch the line on, then ring her from **Voice Agent** or **Today's calls**. Before a demo, `npm run bank:reset -- --yes` returns everything to the seeded state. [DEMO.md](DEMO.md) has a timed three-minute walkthrough.
+`npm run bank:reset -- --yes` returns the bank and local data to the seeded state (without `--yes` it only previews).
 
 - **Docker:** `docker build -t trustmemory . && docker run -p 3000:3000 --env-file .env trustmemory`
-- **Render:** create a Web Service from this repo (Docker, branch `dev`, health check `/api/health`), or use `render.yaml`; set `GROQ_API_KEYS`, `HINDSIGHT_API_KEY`, the three `DEMO_*_PASSWORD` values and `TRUST_PROXY=1` in the Render dashboard.
-
-## How memory is used
-
-1. **Recall before the first word:** the helper's tagged facts (`helper:<id>`), her standing profile (mental model `coach-<id>`), her household's expectations and her open promises.
-2. **Recall on every turn:** each thing she says becomes a recall query, so the agent reacts with what is on record about it.
-3. **Citations:** every remembered fact gets a tag; sentences that use memory must cite it, and the console shows the fact and when it was learned.
-4. **Learn only from her words:** after the call the outcome is extracted from the helper's own lines, dated, never from what the agent said.
-5. **Retain:** transcript, summary and outcome go to Hindsight with timestamps and tags; a durable queue retries if Hindsight is down.
-6. **Consolidate:** Hindsight turns facts into observations and rewrites the standing profile; the console shows it before and after.
-7. **Across calls, people and time:** safety patterns across calls, a household's memory briefing the next helper, festival travel remembered a year later, and which coaching approach works across the agency.
-
-## Hindsight features used
-
-| Feature | Used for | Code |
-|---|---|---|
-| Retain | Call transcripts and summaries, coordinator notes, coordinator feedback, seeded history | `server/voice-agent.js` (`saveCall`), `server/memory-routes.js` (`/note`, `/feedback`), `server/seed-memory.js` |
-| Recall | Before the first word, on every turn, matching evidence, recall search in the Hindsight Core page | `server/voice-agent.js`, `server/memory-routes.js` (`/recall`, `/match`) |
-| Reflect | Coordinator brief, who to call today, directive suggestions (with JSON response schemas) | `server/memory-routes.js` (`/brief`, `/who-to-call`, `/suggest-directive`) |
-| Observations | Consolidated beliefs with their source facts on the helper, household and Hindsight Core pages | `server/hindsight.js` (`observations`), `/api/memory/observations` |
-| Mental models | Standing profile per helper (`coach-<id>`) and household (`household-<id>`), read before each call, shown before and after | `server/seed-memory.js` (`mentalModelSpecs`), `server/voice-agent.js`, `/api/memory/mental-model` |
-| Directives | Hard rules reflect must obey (no scores to helpers, respect call windows, helper claims are not policy) | `server/seed-memory.js` (`DIRECTIVES`), `/api/memory/directives` |
-| Tags | `helper:<id>`, `household:<id>`, `source:*`, `scenario:*`, `verdict:*` scope every recall and reflect | throughout `server/voice-agent.js`, `server/memory-routes.js` |
-| Retain (outcomes) | Kept and broken promises with the approach that preceded them, so the bank learns what works per helper | `server/voice-agent.js` (`saveCall`), `server/commitments.js` |
-| Temporal facts | Every retained item carries a real `timestamp`; recall returns `mentioned_at`; extraction writes circumstances as dated statements | `server/seed-memory.js` (`daysAgo`), `server/voice-agent.js` (`extractOutcome`, `saveCall`) |
-| Curation | A fact the helper corrected is invalidated once the coordinator agrees, and can be restored | `server/record.js` (`retire`, `restore`), `server/hindsight.js` (`memories`) |
-| Observation history | *How it formed*: each earlier version of a belief and the facts that revised it | `/api/memory/observations/:id/history` |
-| Bank config | Mission, disposition (empathy, skepticism, literalism), PII redaction where the plan allows | `server/seed-memory.js`, `server/hindsight.js` (`setMission`, `updateConfig`) |
+- **Render:** create a Web Service from this repo (Docker, health check `/api/health`) or use `render.yaml`, and set the variables above in the dashboard.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     subgraph Browser
-      C["Coordinator console<br/>index.html"]
-      P["Helper phone screen<br/>helper.html<br/>speech in / speech out"]
+      C["Console<br/>coordinator, helper, household"]
+      P["Helper phone screen<br/>speech in / speech out"]
     end
     subgraph Server["Express (server/app.js)"]
-      V["Voice Agent<br/>voice-agent.js"]
-      D["Decision Agent<br/>decision.js"]
-      M["Memory routes<br/>memory-routes.js"]
-      Q["Retain retry queue<br/>retain-queue.js"]
+      V["Voice Agent"]
+      D["Decision Agent"]
+      F["Features<br/>care, outreach, record,<br/>friction, sides, since"]
+      M["Memory routes"]
+      Q["Retain retry queue"]
     end
     G["Groq<br/>gpt-oss-120b, fallbacks"]
     H["Hindsight Cloud<br/>bank trustmemory-agency"]
-    S[("SQLite<br/>helpers, calls, activity,<br/>local memory ledger")]
+    S[("SQLite<br/>people, calls, promises,<br/>requests, activity")]
 
+    C -- "/api/*" --> F
+    C -- "/api/memory/*" --> M
     C -- "/api/voice/session, ring, complete" --> V
     P -- "/api/voice/incoming, answer, turn, hangup" --> V
-    C -- "/api/memory/*" --> M
     V -- "chat, JSON extraction" --> G
     V -- "recall, mental model, retain" --> H
-    V --> D
-    D --> S
-    V --> S
+    F -- "recall, reflect, retain, curate" --> H
     M -- "recall, observations, reflect,<br/>mental models, directives" --> H
+    V --> D --> S
+    F --> S
     Q -- "retry retain" --> H
-    Q --> S
 ```
 
-The coordinator console and the helper phone screen share one server-side session: the phone screen speaks and listens (browser `speechSynthesis` and Web Speech recognition, with a typed fallback), the console mirrors the transcript live by polling. No telephony provider is involved.
+The console and the helper's phone share one server-side call session: the phone speaks and listens (Azure neural voices or the browser's own, Web Speech recognition, and a typed fallback), and the console mirrors the transcript live. No telephony provider is involved.
 
 <details><summary><b>The agents, as they exist in code</b></summary>
 
-| Agent | Where | What it actually does |
+| Agent | Where | What it does |
 |---|---|---|
-| Voice | `server/voice-agent.js`, `server/voice-routes.js`, `TrustMemory-AI-modular/js/helper-phone.js`, `js/ui/voice-live.js` | Groq-driven call: recall before the first word and on every turn, `[mN]` citations, ring / answer / hang-up state machine, outcome extraction, save. |
-| Memory | `server/hindsight.js`, `server/retain-queue.js`, `server/seed-memory.js` | Hindsight REST client (retain, recall, reflect, observations, mental models, directives, bank config). Durable retry for failed retains. Seeds the bank with dated history. |
-| Decision | `server/decision.js` | Re-scores churn from the extracted outcome with a named delta per reason (for example `concrete commitment made (-8)`), writes an Opinion row and an activity row. |
-| Reflection | `server/memory-routes.js` (`/api/memory/observations`, `/brief`, `/who-to-call`, `/suggest-directive`) | Uses Hindsight observations and reflect: consolidated beliefs with evidence, "brief me before this call", "who should I call today", and a proposed standing rule after a call that the coordinator can approve as a directive. |
-| Matching | `server/memory-routes.js` (`/api/memory/match`) | Recalls each candidate's history and the household's expectations, then ranks with trust, churn, primary role and memory evidence. Every score comes with the reasons and the recalled facts. |
+| Voice | `server/voice/*`, `server/voice-routes.js`, `js/helper-phone.js`, `js/ui/voice-live.js` | The Groq-driven call: recall before the first word and on every turn, `[mN]` citations, ring / answer / hang-up, outcome extraction, save |
+| Memory | `server/hindsight.js`, `server/retain-queue.js`, `server/seed-memory.js` | The Hindsight REST client, the durable retry queue, and the seeded dated history |
+| Decision | `server/decision.js` | Re-scores churn from the call outcome with a named reason for each change (for example `concrete commitment made (-8)`) |
+| Reflection | `server/memory-routes.js` | Observations, "brief me before this call", "who should I call today", and a proposed standing rule the coordinator can approve as a directive |
+| Matching | `server/memory-routes.js` (`/api/memory/match`), `server/friction.js` | Ranks candidates with memory evidence and reasons; checks friction with a household before placing |
+| Care | `server/care.js`, `server/outreach.js`, `server/commitments.js` | Safety checks across calls, handover briefs, today's calls, and what works across the agency |
 
 </details>
 
-<details><summary><b>API and errors</b></summary>
+<details><summary><b>API</b></summary>
+
+Everything under `/api` needs a signed-in session except `/api/health` and `/api/auth/*`. Helpers and households reach only `/api/me/*` (and a helper, her own call); every other route is the coordinator's.
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | Liveness, which integrations are configured, DB counts, retains waiting. Never returns secrets. |
-| GET | `/api/helpers`, `/api/households` | Roster with current trust, churn and difficulty |
-| POST | `/api/helpers`, `/api/households` | Register a helper or household (validated); saved in SQLite, profile retained to Hindsight and a standing mental model created |
-| GET | `/api/dashboard` | Every dashboard number from the server: counts, follow-ups due, escalations, alerts |
-| GET | `/api/outreach/today` | Who to ring today, ranked, each reason dated and sourced (ledger, agency records, Hindsight) |
-| GET | `/api/outreach/learning` | What works across the agency: kept rate by problem type and coaching approach |
-| GET | `/api/care/safety`, `/api/care/safety/:helperId` | Private safety flags with the helper's dated words |
-| POST | `/api/care/safety/:flagId/review` | Mark a flag reviewed with a note |
-| GET | `/api/care/handover/:householdId?helper=&lang=` | Preview a handover brief for the next helper (en, hi, te); writes nothing |
-| POST | `/api/care/handover/:householdId/given` | Record that the brief was given (retained to Hindsight) |
-| GET, POST | `/api/me/requests` | Helper or household requests: leave, running late, pay issue, concern, cover needed, praise |
-| GET, PUT | `/api/me/preferences`, `/api/me/household-notes` | Helper call language and time; what the next helper should know about a home |
-| GET | `/api/me/festivals` | Upcoming festivals for leave planning |
-| GET | `/api/requests?status=open` · POST `/api/requests/:id/ack` | Coordinator inbox of requests |
-| POST | `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout` · GET `/api/auth/me` | Accounts: scrypt-hashed passwords, HttpOnly session cookie, helpers and households start pending |
+| GET | `/api/health` | Liveness, which integrations are configured, DB counts, retains waiting. Never returns secrets |
+| POST | `/api/auth/signup`, `/api/auth/login`, `/api/auth/logout` · GET `/api/auth/me` | Accounts: scrypt-hashed passwords, HttpOnly session cookie; new helpers and households start pending |
+| GET · POST | `/api/auth/demo` | One-click demo sign-in: which roles are offered; body `{role}` signs in as that demo account |
 | GET | `/api/auth/pending` · POST `/api/auth/approve/:id` | Coordinator approves new accounts |
-| GET | `/api/me`, `/api/me/helper`, `/api/me/household` · POST `/api/me/feedback` | The signed-in helper's or household's own view; household feedback is retained to Hindsight |
-| GET | `/api/memories/:helper_id` | Local memory ledger for a helper (World, Experience, Opinion, Observation) |
-| GET | `/api/calls` | Saved calls with transcript and extracted outcome |
-| GET | `/api/memory/commitments?helper=` | Commitment ledger: promises, kept rate, and which coaching approach works with the helper |
-| GET | `/api/activity` | Last 50 agent activity rows |
-| POST | `/api/voice/session` | Start a call: recall memory, generate the opening line. Body `{helper_id, scenario, late_count, use_memory}` |
-| GET | `/api/friction?helper=&household=` | Likely friction between one helper and one household, from both memories |
-| GET | `/api/sides?household=&helper=` | Both sides of a placement's story, lined up by topic |
-| GET | `/api/since?helper=` | What changed since the helper's last call |
+| GET | `/api/me`, `/api/me/helper`, `/api/me/household` · POST `/api/me/feedback` | A helper's or household's own view; household feedback is retained |
+| GET, POST | `/api/me/requests` | Requests: leave, running late, pay issue, concern, cover needed, praise |
+| GET, PUT | `/api/me/preferences`, `/api/me/household-notes` | Call language and time; what the next helper should know |
+| GET | `/api/me/festivals` | Upcoming festivals for leave planning |
 | GET | `/api/me/record` · POST `/api/me/record/correction` | The helper's own record (from her words only) and her corrections |
-| GET | `/api/record/:helperId/corrections` · POST `/api/record/corrections/:id/retire`, `/restore`, `/keep` | Coordinator reviews a helper's corrections; retire invalidates the old fact in Hindsight |
-| GET | `/api/memory/observations/:id/history` | How a belief was revised as new facts arrived |
-| POST | `/api/record/:helperId/forget` | Coordinator deletes every memory about a helper; body `{confirm_name}` |
-| GET | `/api/voice/tts/status` · POST `/api/voice/tts` | Azure neural speech for the phone screen (helper: own call only) |
-| POST | `/api/voice/followup-draft` | WhatsApp follow-up draft in the call's language, for a completed call |
-| POST | `/api/voice/ring` | Ring the helper's phone screen for a session |
-| GET | `/api/voice/incoming?helper=` | Phone screen poll for a ringing call (unanswered rings become `missed` after 60 s) |
-| POST | `/api/voice/answer` | Accept or decline. Body `{session_id, accept}` |
-| POST | `/api/voice/turn` | One helper utterance, returns the agent reply, citations and what was recalled this turn |
-| POST | `/api/voice/hangup` | End the call from either side. Body `{session_id, by}` |
-| POST | `/api/voice/complete` | Extract the outcome, save, retain, re-score. Idempotent: parallel calls return the same single record |
-| GET | `/api/voice/session/:id` | Session state, transcript and result (the console mirror polls this) |
-| POST | `/api/voice/cancel` | Discard an unsaved session |
-| GET | `/api/memory/status` | Groq and Hindsight configuration, bank, model chain, retains waiting |
-| GET | `/api/memory/stats` | Hindsight bank statistics |
+| GET | `/api/helpers`, `/api/households` · POST the same | Roster with trust, churn and difficulty; register a helper or household |
+| GET | `/api/dashboard` | Every dashboard number: counts, follow-ups due, escalations, alerts |
+| GET | `/api/requests?status=open` · POST `/api/requests/:id/ack` | Coordinator inbox of requests |
+| GET | `/api/outreach/today`, `/api/outreach/learning` | Who to ring today and why; what works across the agency |
+| GET | `/api/care/safety`, `/api/care/safety/:helperId` · POST `/api/care/safety/:flagId/review` | Private safety checks with the helper's dated words |
+| GET | `/api/care/handover/:householdId?helper=&lang=` · POST `.../given` | Handover brief for the next helper (en, hi, te) |
+| GET | `/api/friction?helper=&household=` | Likely friction between a helper and a household |
+| GET | `/api/sides?household=&helper=` | Both sides of a placement's story, by topic |
+| GET | `/api/since?helper=` | What changed since the helper's last call |
+| GET | `/api/record/:helperId/corrections` · POST `/api/record/corrections/:id/retire`, `/restore`, `/keep` | Review a helper's corrections; retire invalidates the old fact in Hindsight |
+| POST | `/api/record/:helperId/forget` | Delete every memory about a helper; body `{confirm_name}` |
+| POST | `/api/voice/session`, `/ring`, `/complete`, `/cancel` | Start a call (recall, opening line), ring her phone, save the outcome (idempotent), discard |
+| GET | `/api/voice/incoming?helper=` · POST `/api/voice/answer`, `/turn`, `/hangup` | The phone screen: ringing calls (missed after 60 s), answer, each utterance, hang up |
+| GET | `/api/voice/session/:id` | Session state, transcript, result and step timings |
+| GET | `/api/voice/tts/status` · POST `/api/voice/tts` | Azure neural speech for the phone screen |
+| POST | `/api/voice/followup-draft` | WhatsApp follow-up draft for a completed call |
+| GET | `/api/calls`, `/api/activity`, `/api/memories/:helper_id` | Saved calls, agent activity, the local memory ledger |
+| GET | `/api/memory/status`, `/api/memory/stats` | Configuration, and Hindsight bank statistics |
 | GET | `/api/memory/recall?q=&helper=\|household=` | Raw recall |
-| GET | `/api/memory/observations?helper=\|household=` | Consolidated beliefs with evidence |
-| GET | `/api/memory/mental-model?helper=\|household=` | Standing profile |
-| POST | `/api/memory/mental-model/refresh` | Ask Hindsight to rewrite a standing profile now |
-| GET | `/api/memory/brief?helper=\|household=` | Reflect: brief the coordinator |
-| GET, POST | `/api/memory/directives` | List or create a directive (duplicates are rejected) |
-| PATCH | `/api/memory/directives/:id` | Enable or disable a directive |
-| GET | `/api/memory/suggest-directive?helper=` | Reflect proposes one standing rule, with evidence |
-| POST | `/api/memory/feedback` | Coordinator approves, corrects or rejects the agent's record of a call; retained |
-| POST | `/api/memory/note` | Coordinator note about a helper or household; retained (queued on failure) |
-| GET | `/api/memory/who-to-call` | Reflect across the bank: who to call today, why, and when |
-| GET | `/api/memory/metrics` | Learning metrics: recalls, citations, turns to close, commitment rate, feedback |
-| GET | `/api/memory/match?household=&role=` | Memory-backed candidate ranking with reasons and evidence |
+| GET | `/api/memory/observations?helper=\|household=` · `/api/memory/observations/:id/history` | Consolidated beliefs with evidence; how one was revised |
+| GET | `/api/memory/mental-model?helper=\|household=` · POST `.../refresh` | Standing profile; ask Hindsight to rewrite it now |
+| GET | `/api/memory/brief`, `/api/memory/who-to-call`, `/api/memory/suggest-directive` | Reflect: brief the coordinator, who to call today, a proposed rule |
+| GET, POST · PATCH | `/api/memory/directives` · `/api/memory/directives/:id` | List, create, enable or disable directives |
+| POST | `/api/memory/feedback`, `/api/memory/note` | Coordinator verdict on a call record; a note about a person (both retained) |
+| GET | `/api/memory/commitments?helper=`, `/api/memory/metrics`, `/api/memory/match?household=&role=` | Promise ledger, learning metrics, memory-backed matching |
 
-### Errors
-
-Errors are JSON: `{ "error": "message", "code": "CODE" }` (memory routes return `error` only).
-
-| Status | Code | When |
-|---|---|---|
-| 400 | `VALIDATION` | Bad `session_id`, empty or over-long `text`, unknown `scenario`, `late_count` outside 0..20, bad feedback `verdict`, recall query missing or over 300 characters |
-| 400 | `BAD_JSON` | Body is not valid JSON |
-| 400 | (none) | Completing a call with no helper turns; missing `helper=`/`household=`; bad note |
-| 404 | `NOT_FOUND` | Unknown helper, unknown `/api` route; also unknown session or household |
-| 409 | (none) | Turn after the call was hung up, declined or saved; ring after the call ended; answering a call that is no longer ringing; duplicate directive |
-| 413 | `TOO_LARGE` | Body over 64 KB |
-| 429 | `RATE_LIMITED` | Over 30 voice or 60 memory requests per minute per client (with `Retry-After`); status polls are exempt |
-| 500 | `INTERNAL` | Unexpected error; no stack trace is returned |
-| 503 | `GROQ_NOT_CONFIGURED` | Voice call without a Groq key |
-| 503 | (none) | Memory route that needs Hindsight when `HINDSIGHT_API_KEY` is not set; `/api/health` when the database is unavailable |
+Errors are JSON, `{ "error": "message", "code": "CODE" }`: `400 VALIDATION` or `BAD_JSON`, `401 AUTH_REQUIRED`, `403 FORBIDDEN` or `PENDING`, `404 NOT_FOUND`, `409` for actions on a call that has ended, `413 TOO_LARGE` (over 64 KB), `429 RATE_LIMITED` (30 voice or 60 memory requests a minute, with `Retry-After`), `500 INTERNAL` (no stack trace), `502 MEMORY_UNAVAILABLE`, `503` when Groq or Hindsight is not configured.
 
 </details>
 
 ## Testing
 
 ```bash
-npm test                 # node:test, all suites
-npm run lint             # ESLint 9 (flat config in eslint.config.js), recommended rules
-npm run test:coverage    # same tests; fails if server/ line coverage drops below 75% (currently ~80%)
-npm run eval:memory      # recall accuracy and leaks between helpers, against the live bank; writes docs/memory-eval.md
+npm test                 # node:test, 106 tests
+npm run lint             # ESLint 9, recommended rules
+npm run test:coverage    # fails if server/ line coverage drops below 75% (currently about 88%)
+npm run eval:memory      # recall accuracy and leaks between helpers, against the live bank
 ```
 
-Every voice session carries `trace: [{ step, ms, ok, detail }]` (start: `recall`, `mental_model`, `household_recall`, `ledger`, `llm_greeting`; each turn: `turn_recall`, `llm_reply`, `attribution`; completion: `extract`, `save_local`, `decision`, `retain`), exposed on `GET /api/voice/session/:id`, with each turn's and each completion's own entries in their responses. `test/voice-lifecycle.test.js` covers the trace, restoring a persisted session after a restart, and handing pending retains to the queue on shutdown.
+Tests never touch the network or your data: `test/support.js` uses an in-memory database, blanks every API key and replaces `fetch`, and tests that need Groq or Hindsight install a mock that answers like the real API. They cover the full call flow end to end (ring, answer, turns, hang-up, a single saved record even under parallel completes, missed rings, failed retains landing in the retry queue), access control for all three roles, safety checks, handover briefs, corrections and curation, forgetting, friction, both sides, since-last-call and the memory eval. Every call also records step timings (`trace`) on `GET /api/voice/session/:id`.
 
-Tests never touch the network or your data. `test/support.js` sets `TRUSTMEMORY_DB=':memory:'`, blanks every Groq and Hindsight variable, and replaces `globalThis.fetch`; tests that need Groq or Hindsight install a fetch mock that answers like the real APIs. Covered: the commitment ledger and what-works learning, validation, rate limits, health, JSON errors, the retain retry queue, the Decision Agent, citation handling, and the full call flow end to end (session, ring, incoming, answer, turn, hang-up, complete, a single saved record and one churn update even under parallel completes, 409 after hang-up, ring expiry to `missed`, failed retain landing in the retry queue).
+CI runs lint and tests on Node 22 and 24 for every push, plus the coverage check on 24.
 
-To return the demo to the seeded state (removes every call, note and feedback added since the seed, locally and in the Hindsight bank):
+## Limits and roadmap
 
-```bash
-npm run bank:reset           # preview what would be removed
-npm run bank:reset -- --yes  # apply
-```
-
-CI (`.github/workflows/test.yml`) runs `npm ci --ignore-scripts`, `npm run lint` and `npm test` on Node 22.x and 24.x for every push and pull request, plus `npm run test:coverage` on 24.x. Skipping install scripts means better-sqlite3 has no native binary, so CI exercises the `node:sqlite` fallback.
-
-## Known limits
-
-- Calls run in the browser (speech in and out), not over a phone line; the phone screen needs internet for speech recognition, and the typed reply box always works.
-- Telugu is spoken only where the browser has a Telugu voice; otherwise the text is shown.
-- Replies take about 2-5 seconds on the Groq free tier; keys in `GROQ_API_KEYS` rotate and models fall back before failing.
+**Limits today**
+- Calls run in the browser (speech in and out), not over a phone line. The phone screen needs internet for speech recognition; the typed reply box always works.
+- Without an Azure key, Telugu is spoken only where the browser has a Telugu voice; otherwise the text is shown.
+- Replies take about 2 to 5 seconds on the Groq free tier.
 - Standing profiles and safety summaries are rewritten by Hindsight a minute or so after a call.
 - One agency, one Hindsight bank. No password reset or email verification yet.
 
-## Roadmap
-
-- **WhatsApp voice notes.** Most helpers already send voice notes to their agency. Transcribe them and retain them the same way as a call, so memory builds between calls too.
-- **Missed-call callback.** A helper gives a free missed call; the agent rings her back with her memory loaded. This is how many low-income workers in India reach services without spending on talk time.
-- **A real phone line.** The same session and relay code behind a telephony provider, so helpers without a smartphone are covered.
-- **Several agencies.** One Hindsight bank per agency, with the agency id carried in tags.
+**Next**
+- **WhatsApp voice notes.** Most helpers already send voice notes to their agency. Transcribe and retain them like a call, so memory builds between calls too.
+- **Missed-call callback.** A helper gives a free missed call and the agent rings her back with her memory loaded, the way many low-income workers in India reach services without spending on talk time.
+- **A real phone line** behind a telephony provider, for helpers without a smartphone.
+- **Several agencies,** one Hindsight bank each.
 
 <details><summary><b>Project layout</b></summary>
 
 ```
 server/                  Express app, agents, Hindsight and Groq clients, SQLite
-  app.js, index.js       app factory and entry point   shutdown.js  graceful shutdown
-  voice/                 Voice Agent, one module per concern (voice-agent.js re-exports it):
-    session.js           start, turn, complete      relay.js          ring, answer, hang up
-    recall.js            memory recall, de-dupe      prompt.js         persona system prompt
-    citations.js         [mN] citations              extraction.js     outcome extraction
-    session-store.js     sessions + SQLite restore   inflight.js       saves/retains in flight
-    trace.js, util.js    step timings, languages   hooks.js          after-call hooks
-  voice-routes.js        Voice Agent HTTP routes   commitments.js  commitment ledger
-  hindsight.js           Hindsight REST client  memory-routes.js  memory, reflect, matching routes
-  decision.js            Decision Agent         retain-queue.js   durable retain retries
-  seed-memory.js         seeds the bank         db.js, sqlite-compat.js
-  care.js                safety signals, handover brief       care-routes.js
-  outreach.js            today's calls, agency learning       outreach-routes.js
-  auth.js                accounts, sessions, demo accounts    auth-routes.js  access rules, /api/me
-  people.js              validated helpers and households     seed/  feature seed history
+  app.js, index.js       app factory and entry point        shutdown.js       graceful shutdown
+  voice/                 the Voice Agent, one module per concern (voice-agent.js re-exports it)
+    session.js           start, turn, complete              relay.js          ring, answer, hang up
+    recall.js            memory recall, de-dupe             prompt.js         persona system prompt
+    citations.js         [mN] citations                     extraction.js     outcome extraction
+    session-store.js     sessions + SQLite restore          inflight.js       saves in flight
+    trace.js, util.js    step timings, languages            hooks.js          after-call hooks
+    tts.js               Azure neural voices                followup.js       WhatsApp follow-up draft
+  hindsight.js           Hindsight REST client              memory-routes.js  memory, reflect, matching
+  voice-routes.js        Voice Agent routes                 decision.js       Decision Agent
+  retain-queue.js        durable retain retries             groq.js           key rotation, model fallback
+  care.js                safety checks, handover brief      care-routes.js
+  outreach.js            today's calls, agency learning     outreach-routes.js
+  commitments.js         promise ledger, what works
+  record.js              her record, corrections, forget    record-routes.js
+  friction.js            friction before a placement        friction-routes.js
+  sides.js               both sides of a story              sides-routes.js
+  since.js               what changed since the last call   since-routes.js
+  requests.js            requests in people's own words     request-routes.js
+  auth.js                accounts, sessions, demo sign-in   auth-routes.js    access rules, /api/me
+  people.js              validated helpers and households   db.js, sqlite-compat.js
+  seed-memory.js         seeds the bank                     seed/             feature seed history
+  reset-bank.js          back to the seeded state           eval-memory.js    the memory eval
   validate.js, rate-limit.js, health-routes.js, logger.js
-TrustMemory-AI-modular/  coordinator console (index.html) and helper phone screen (helper.html)
-  js/auth.js             sign-in, sign-up, pending accounts
-  js/ui/motion.js        page motion and the 3D memory constellation (css/motion.css)
-  js/ui/polish.js        icons, score rings, toasts
+TrustMemory-AI-modular/  the console for all three roles (index.html) and the helper phone (helper.html);
+                         full file map in TrustMemory-AI-modular/README.md
+docs/                    screenshots, memory-eval.md
 test/                    node:test suites
 ```
 
 </details>
+
+## License
+
+MIT, see [LICENSE](LICENSE).

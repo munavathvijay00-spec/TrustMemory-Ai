@@ -20,7 +20,7 @@ const agent = require('./voice-agent');
 
 const router = express.Router();
 
-const PUBLIC = [/^\/api\/health(\/|$)/, /^\/api\/auth\/(login|signup|me|logout)$/];
+const PUBLIC = [/^\/api\/health(\/|$)/, /^\/api\/auth\/(login|signup|me|logout|demo)$/];
 const RELAY_POSTS = ['/api/voice/answer', '/api/voice/turn', '/api/voice/hangup'];
 
 function nowSql() { return new Date().toISOString().replace('T', ' ').substring(0, 19); }
@@ -94,6 +94,20 @@ router.post('/api/auth/login', (req, res) => {
   try {
     const { email, password } = req.body || {};
     const s = auth.login(email, password, req.ip);
+    res.setHeader('Set-Cookie', auth.sessionCookie(req, s.token, s.expires));
+    res.json({ account: s.account });
+  } catch (err) { fail(res, err); }
+});
+
+/** One-click demo sign-in: which roles are offered, and signing in as one. */
+router.get('/api/auth/demo', (req, res) => {
+  res.json({ roles: req.authOff ? [] : auth.demoRoles() });
+});
+
+router.post('/api/auth/demo', (req, res) => {
+  if (req.authOff) return res.status(400).json({ error: 'Sign-in is disabled while authentication is off.', code: 'AUTH_OFF' });
+  try {
+    const s = auth.demoLogin(String((req.body || {}).role || ''), req.ip);
     res.setHeader('Set-Cookie', auth.sessionCookie(req, s.token, s.expires));
     res.json({ account: s.account });
   } catch (err) { fail(res, err); }

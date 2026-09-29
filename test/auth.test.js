@@ -186,3 +186,29 @@ test('auth: a malformed session cookie is ignored, not a 500', async () => {
   const r = await srv.request('GET', '/api/health', { headers: { Cookie: auth.COOKIE + '=%E0%A4%A' } });
   assert.equal(r.status, 200);
 });
+
+test('auth: one-click demo sign-in is offered only for demo accounts whose password comes from the environment', async () => {
+  auth.seedDemoAccounts({ DEMO_HELPER_PASSWORD: PASS.helper });   // an earlier test changed it
+  const env = { DEMO_COORDINATOR_PASSWORD: PASS.coordinator, DEMO_HELPER_PASSWORD: PASS.helper };
+  assert.deepEqual(auth.demoRoles(env), ['coordinator', 'helper']);
+  assert.deepEqual(auth.demoRoles(Object.assign({ DEMO_ONE_CLICK: '0' }, env)), [], 'DEMO_ONE_CLICK=0 turns it off');
+  assert.equal(auth.demoLogin('helper', '1.2.3.4', env).account.email, 'radha@trustmemory.demo');
+  assert.throws(() => auth.demoLogin('household', '1.2.3.4', env), /not available/);
+  assert.throws(() => auth.demoLogin('admin', '1.2.3.4', env), /not available/);
+
+  // Over HTTP: with no demo passwords in this process's environment, nothing is offered.
+  const saved = {};
+  for (const k of ['DEMO_COORDINATOR_PASSWORD', 'DEMO_HELPER_PASSWORD', 'DEMO_HOUSEHOLD_PASSWORD']) { saved[k] = process.env[k]; delete process.env[k]; }
+  try {
+    assert.deepEqual((await srv.request('GET', '/api/auth/demo')).body.roles, []);
+    assert.equal((await srv.request('POST', '/api/auth/demo', { body: { role: 'coordinator' } })).status, 404);
+    process.env.DEMO_COORDINATOR_PASSWORD = PASS.coordinator;
+    assert.deepEqual((await srv.request('GET', '/api/auth/demo')).body.roles, ['coordinator']);
+    const r = await srv.request('POST', '/api/auth/demo', { body: { role: 'coordinator' } });
+    assert.equal(r.status, 200, r.text);
+    assert.equal(r.body.account.role, 'coordinator');
+    assert.ok(cookieFrom(r), 'a session cookie is set');
+  } finally {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
